@@ -4,6 +4,8 @@
 
 ---
 
+![ADBora](Screenshot.png)
+
 ## Deutsch
 
 **ADBora** ist eine native Windows-Anwendung (.NET 8 WinForms, dunkles Theme), die das
