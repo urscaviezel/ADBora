@@ -156,6 +156,7 @@ internal sealed class MainForm : Form
         _tabs.AddTab("\uE896", "APK Install", "APK install");
         _tabs.AddTab("\uEC4A", "Speedtest", "Speed test");
         _tabs.AddTab("\uE756", "ADB Commands", "ADB commands");
+        _tabs.AddTab("\uE946", "Build Info", "Build info");
         _tabs.SelectedIndexChanged += ShowPage;
 
         _pages.Add(new SettingsPage(_state));
@@ -163,6 +164,7 @@ internal sealed class MainForm : Form
         _pages.Add(new InstallPage(_state));
         _pages.Add(new SpeedTestPage(_state));
         _pages.Add(new CommandsPage(_state));
+        _pages.Add(new InfoPage(_state, ExitForUpdate));
         foreach (Control page in _pages)
         {
             page.Dock = DockStyle.Fill;
@@ -302,6 +304,23 @@ internal sealed class MainForm : Form
         }
 
         _poll.Start();
+
+        if (_state.Settings.CheckUpdatesOnStart)
+        {
+            Updater.CleanupDownloads();
+            await Task.Delay(2000);
+            if (!IsDisposed && !_closeRequested)
+                await UpdateUi.CheckAsync(this, _state, ExitForUpdate, manual: false);
+        }
+    }
+
+    /// <summary>Closes ADBora without questions so that the update can replace it.</summary>
+    private void ExitForUpdate()
+    {
+        foreach (IPage page in _pages.OfType<IPage>())
+            page.CancelOperation();
+        _closingDone = true;
+        BeginInvoke(new Action(Close));
     }
 
     private sealed record DeviceItem(AdbDevice Device)
@@ -356,6 +375,18 @@ internal sealed class MainForm : Form
     {
         if (_state.IsBusy && !_closingDone)
         {
+            if (!_closeRequested && e.CloseReason is CloseReason.UserClosing or CloseReason.TaskManagerClosing)
+            {
+                DialogResult answer = MessageBox.Show(this,
+                    Loc.T($"Es läuft noch ein Vorgang: {_state.BusyOperation}.\n\nWenn ADBora jetzt beendet wird, wird der Vorgang abgebrochen und bleibt unvollständig (z. B. ein unvollständiges Backup).\n\nADBora trotzdem beenden?",
+                          $"An operation is still running: {_state.BusyOperation}.\n\nIf ADBora is closed now, the operation is cancelled and remains incomplete (e.g. an incomplete backup).\n\nClose ADBora anyway?"),
+                    "ADBora", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                if (answer != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
             _closeRequested = true;
             e.Cancel = true;
             foreach (IPage page in _pages.OfType<IPage>())

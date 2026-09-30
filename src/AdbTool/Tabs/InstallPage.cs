@@ -20,8 +20,8 @@ internal sealed class InstallPage : UserControl, IPage
     private readonly AppState _state;
     private readonly DropZone _apkZone = new("",
         "APK hierher ziehen", "Drop APK here",
-        "Eine oder mehrere .apk-Dateien (Split-APKs werden erkannt) oder einen App-Ordner aus einem Backup",
-        "One or more .apk files (split APKs are detected) or an app folder from a backup");
+        "Eine oder mehrere .apk-Dateien (Split-APKs werden erkannt), einen App-Ordner oder einen ganzen Backup-Ordner",
+        "One or more .apk files (split APKs are detected), an app folder or a whole backup folder");
     private readonly DropZone _obbZone = new("",
         "OBB-Ordner hierher ziehen", "Drop OBB folder here",
         "Ordner mit dem Paketnamen (z. B. com.firma.spiel) oder .obb-Dateien – Ziel: /sdcard/Android/obb/<Paket>",
@@ -30,6 +30,7 @@ internal sealed class InstallPage : UserControl, IPage
     private readonly CheckBox _grant = Ui.CheckBox("Alle Berechtigungen gewähren (-g)", "Grant all permissions (-g)");
     private readonly DarkButton _pickApk = Ui.Button("APK auswählen …", "Choose APK …");
     private readonly DarkButton _pickObb = Ui.Button("OBB-Ordner auswählen …", "Choose OBB folder …");
+    private readonly DarkButton _restoreButton = Ui.Button("Batch-Restore …", "Batch restore …", ButtonKind.Normal);
     private readonly DarkButton _explorer = Ui.Button("Gerät im Explorer öffnen", "Open device in Explorer");
     private readonly DarkButton _cancel = Ui.Button("Abbrechen", "Cancel", ButtonKind.Danger);
     private readonly DarkProgressBar _progress = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 26, Margin = new Padding(8, 4, 0, 4) };
@@ -73,9 +74,16 @@ internal sealed class InstallPage : UserControl, IPage
         apkBox.Controls.Add(_apkZone, 0, 0);
         apkBox.Controls.Add(_downgrade, 0, 1);
         apkBox.Controls.Add(_grant, 0, 2);
-        var pickApkRow = Ui.Row(_pickApk);
+        _restoreButton.Click += (_, _) => PickBackupFolder();
+        var pickApkRow = Ui.Row(_pickApk, _restoreButton);
         pickApkRow.Margin = new Padding(0, 8, 0, 0);
         apkBox.Controls.Add(pickApkRow, 0, 3);
+        var restoreHint = Ui.Label(
+            "Batch-Restore: einen ganzen Backup-Ordner laden (oder auf das Feld ziehen) und auswählen, welche Apps mit APK, OBB und Daten in einem Rutsch wiederhergestellt werden.",
+            "Batch restore: load a whole backup folder (or drop it onto the field) and choose which apps to restore in one go, with APK, OBB and data.", muted: true);
+        restoreHint.Margin = new Padding(0, 6, 0, 0);
+        Ui.WrapTo(restoreHint, apkCard);
+        apkBox.Controls.Add(restoreHint, 0, 4);
         apkCard.SetContent(apkBox);
 
         // OBB card
@@ -175,7 +183,7 @@ internal sealed class InstallPage : UserControl, IPage
         bool running = _cts is not null;
         bool idle = !_state.IsBusy;
         bool ready = DeviceReady && idle;
-        _apkZone.Enabled = _obbZone.Enabled = _pickApk.Enabled = _pickObb.Enabled = ready;
+        _apkZone.Enabled = _obbZone.Enabled = _pickApk.Enabled = _pickObb.Enabled = _restoreButton.Enabled = ready;
         _explorer.Enabled = _state.SelectedDevice is not null;
         _cancel.Enabled = running && !_cts!.IsCancellationRequested;
         if (!running)
@@ -293,6 +301,12 @@ internal sealed class InstallPage : UserControl, IPage
         if (!DeviceReady || device is null)
             return;
 
+        if (paths.Length == 1 && Directory.Exists(paths[0]) && BackupScanner.ContainsAppFolders(paths[0]))
+        {
+            OpenRestore(paths[0]);
+            return;
+        }
+
         List<InstallJob> jobs;
         try { jobs = PlanInstall(paths); }
         catch (Exception ex) { Log(ex.Message); return; }
@@ -322,23 +336,9 @@ internal sealed class InstallPage : UserControl, IPage
                 foreach (string apk in job.Apks)
                     Log($"   {Path.GetFileName(apk)}  ({new FileInfo(apk).Length / 1024.0 / 1024.0:0.0} MB)");
 
-                var args = new List<string> { split ? "install-multiple" : "install", "-r" };
-                if (_downgrade.Checked) args.Add("-d");
-                if (_grant.Checked) args.Add("-g");
-                args.AddRange(job.Apks);
-
-                bool success = false;
-                var sw = Stopwatch.StartNew();
-                int exit = await adb.RunStreamingAsync(args, (line, _) =>
-                {
-                    if (line.Trim().StartsWith("Success", StringComparison.OrdinalIgnoreCase)) success = true;
-                    Log("   " + line);
-                }, token);
-
-                if (exit == 0 && success)
+                if (await InstallApksAsync(adb, job.Apks, token))
                 {
                     ok++;
-                    Log(Loc.T($"✔ Installiert ({sw.Elapsed.TotalSeconds:0.0} s)", $"✔ Installed ({sw.Elapsed.TotalSeconds:0.0} s)"));
                     if (job.ObbFolder is not null)
                     {
                         string? package = job.ObbPackage ?? AskPackage(job.ObbFolder);
@@ -349,7 +349,6 @@ internal sealed class InstallPage : UserControl, IPage
                 else
                 {
                     failed++;
-                    Log(Loc.T("✖ Installation fehlgeschlagen", "✖ Installation failed"));
                 }
             }
 
@@ -372,6 +371,243 @@ internal sealed class InstallPage : UserControl, IPage
         {
             Finish();
         }
+    }
+
+    /// <summary>adb install / install-multiple with the chosen options; logs the result.</summary>
+    private async Task<bool> InstallApksAsync(AdbClient adb, List<string> apks, CancellationToken token)
+    {
+        var args = new List<string> { apks.Count > 1 ? "install-multiple" : "install", "-r" };
+        if (_downgrade.Checked) args.Add("-d");
+        if (_grant.Checked) args.Add("-g");
+        args.AddRange(apks);
+
+        bool success = false;
+        var sw = Stopwatch.StartNew();
+        int exit = await adb.RunStreamingAsync(args, (line, _) =>
+        {
+            if (line.Trim().StartsWith("Success", StringComparison.OrdinalIgnoreCase)) success = true;
+            Log("   " + line);
+        }, token);
+
+        if (exit == 0 && success)
+        {
+            Log(Loc.T($"✔ Installiert ({sw.Elapsed.TotalSeconds:0.0} s)", $"✔ Installed ({sw.Elapsed.TotalSeconds:0.0} s)"));
+            return true;
+        }
+        Log(Loc.T("✖ Installation fehlgeschlagen", "✖ Installation failed"));
+        return false;
+    }
+
+    // ------------------------------------------------------------------
+    // Batch restore
+    // ------------------------------------------------------------------
+
+    private void PickBackupFolder()
+    {
+        if (!_restoreButton.Enabled) return;
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = Loc.T("Backup-Ordner auswählen (Backup_… oder der Ordner mit mehreren Backups)", "Choose backup folder (Backup_… or the folder containing several backups)"),
+            UseDescriptionForTitle = true
+        };
+        if (Directory.Exists(_state.Settings.BackupDestination))
+            dialog.InitialDirectory = _state.Settings.BackupDestination;
+        if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
+            OpenRestore(dialog.SelectedPath);
+    }
+
+    private void OpenRestore(string folder)
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        if (!DeviceReady || device is null || _state.IsBusy)
+            return;
+
+        List<RestoreEntry> entries;
+        Cursor = Cursors.WaitCursor;
+        try { entries = BackupScanner.Scan(folder); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        finally { Cursor = Cursors.Default; }
+
+        if (entries.Count == 0)
+        {
+            MessageBox.Show(FindForm(), Loc.T($"In diesem Ordner wurde kein App-Backup gefunden:\n{folder}\n\nErwartet werden App-Ordner „Name [Paket]“ mit APK/, OBB/ oder Data/.",
+                    $"No app backup was found in this folder:\n{folder}\n\nExpected are app folders \"Name [package]\" containing APK/, OBB/ or Data/."),
+                "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        List<RestoreEntry>? selected = RestoreDialog.Show(FindForm(), folder, entries, $"{device.DisplayName} ({device.Serial})");
+        if (selected is { Count: > 0 })
+            _ = RestoreAsync(selected);
+    }
+
+    private async Task RestoreAsync(List<RestoreEntry> items)
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        if (!DeviceReady || device is null)
+            return;
+        if (!_state.TryBeginOperation(Loc.T("Batch-Restore läuft", "Batch restore running")))
+            return;
+
+        _cts = new CancellationTokenSource();
+        CancellationToken token = _cts.Token;
+        UpdateEnabled();
+        var adb = new AdbClient(_state.AdbPath!, device.Serial);
+        var failed = new List<string>();
+        int steps = items.Sum(i => (i.Apk ? 1 : 0) + (i.Obb ? 1 : 0) + (i.Data ? 1 : 0));
+        int step = 0;
+        _progress.Marquee = false;
+        _progress.Maximum = Math.Max(1, steps);
+        _progress.Value = 0;
+        var total = Stopwatch.StartNew();
+
+        Log("");
+        Log(Loc.T($"══ Batch-Restore: {items.Count} App(s) → {device.DisplayName} ({device.Serial})",
+                  $"══ Batch restore: {items.Count} app(s) → {device.DisplayName} ({device.Serial})"));
+
+        try
+        {
+            for (int i = 0; i < items.Count; i++)
+            {
+                token.ThrowIfCancellationRequested();
+                RestoreEntry item = items[i];
+                string label = $"{item.Name} ({i + 1}/{items.Count})";
+                Log("");
+                Log($"▶ {item.Name} [{item.Package}] · " + string.Join(" + ", new[] { item.Apk ? "APK" : null, item.Obb ? "OBB" : null, item.Data ? Loc.T("Daten", "Data") : null }.Where(k => k is not null)));
+
+                try
+                {
+                    if (item.Apk)
+                    {
+                        SetStatus(Loc.T($"Installiere {label} …", $"Installing {label} …"));
+                        foreach (string apk in item.Apks)
+                            Log($"   {Path.GetFileName(apk)}  ({new FileInfo(apk).Length / 1024.0 / 1024.0:0.0} MB)");
+                        bool installed = await InstallApksAsync(adb, item.Apks, token);
+                        _progress.Value = ++step;
+                        if (!installed)
+                        {
+                            failed.Add(item.Name);
+                            int skipped = (item.Obb ? 1 : 0) + (item.Data ? 1 : 0);
+                            if (skipped > 0) Log(Loc.T("   OBB/Daten übersprungen, da die Installation fehlgeschlagen ist.", "   OBB/data skipped because the installation failed."));
+                            step += skipped;
+                            _progress.Value = step;
+                            continue;
+                        }
+                    }
+                    if (item.Obb && item.ObbDir is not null)
+                    {
+                        SetStatus(Loc.T($"Kopiere OBB: {label} …", $"Copying OBB: {label} …"));
+                        await PushTreeAsync(adb, item.ObbDir, $"/sdcard/Android/obb/{item.Package}", "OBB", token);
+                        _progress.Value = ++step;
+                    }
+                    if (item.Data && item.DataDir is not null)
+                    {
+                        SetStatus(Loc.T($"Kopiere Daten: {label} …", $"Copying data: {label} …"));
+                        await adb.CaptureAsync(token, "shell", AdbClient.ShellJoin(new[] { "am", "force-stop", item.Package }));
+                        await PushTreeAsync(adb, item.DataDir, $"/sdcard/Android/data/{item.Package}", Loc.T("Daten", "Data"), token, viaStaging: true);
+                        _progress.Value = ++step;
+                    }
+                }
+                catch (AdbException ex)
+                {
+                    failed.Add(item.Name);
+                    Log("✖ " + ex.Message);
+                }
+            }
+
+            int ok = items.Count - failed.Count;
+            string done = Loc.T($"Batch-Restore fertig: {ok} von {items.Count} Apps erfolgreich ({total.Elapsed:mm\\:ss}).",
+                                $"Batch restore finished: {ok} of {items.Count} apps successful ({total.Elapsed:mm\\:ss}).");
+            Log("");
+            Log("══ " + done);
+            SetStatus(done);
+            if (failed.Count > 0)
+                MessageBox.Show(FindForm(), Loc.T($"Bei {failed.Count} App(s) ist ein Fehler aufgetreten:\n\n", $"{failed.Count} app(s) failed:\n\n") +
+                    string.Join("\n", failed.Take(15)) + (failed.Count > 15 ? "\n…" : "") +
+                    Loc.T("\n\nDetails stehen im Protokoll.", "\n\nSee the log for details."), "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        catch (OperationCanceledException)
+        {
+            Log(Loc.T("Abgebrochen – die aktuelle App ist ggf. nur teilweise wiederhergestellt.", "Cancelled – the current app may be restored only partially."));
+            SetStatus(Loc.T("Abgebrochen.", "Cancelled."));
+        }
+        catch (Exception ex)
+        {
+            Log(ex.Message);
+            MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            Finish();
+        }
+    }
+
+    private const string StagingDir = "/data/local/tmp/adbora-restore";
+
+    /// <summary>
+    /// Copies the content of a local folder into a device folder. Each top-level
+    /// entry is pushed with one adb call (fast for data folders with many files).
+    /// viaStaging: newer Android versions refuse "adb push" into Android/data,
+    /// so the files are pushed to /data/local/tmp first and copied by the shell.
+    /// </summary>
+    private async Task PushTreeAsync(AdbClient adb, string folder, string target, string kind, CancellationToken token, bool viaStaging = false)
+    {
+        FileSystemInfo[] entries = new DirectoryInfo(folder).GetFileSystemInfos();
+        var sizes = entries.ToDictionary(e => e.FullName, e => e is FileInfo f ? f.Length
+            : Directory.EnumerateFiles(e.FullName, "*", SearchOption.AllDirectories).Sum(x => new FileInfo(x).Length));
+        long total = Math.Max(1, sizes.Values.Sum());
+        Log(Loc.T($"   {kind} → {target}  ({total / 1024.0 / 1024.0:0.0} MB)", $"   {kind} → {target}  ({total / 1024.0 / 1024.0:0.0} MB)"));
+
+        AdbResult mk = await adb.CaptureAsync(token, "shell", AdbClient.ShellJoin(new[] { "mkdir", "-p", target }));
+        if (!mk.Ok)
+            throw new AdbException(Loc.T($"Ordner konnte nicht angelegt werden: {target}\n{mk.Combined}", $"Could not create folder: {target}\n{mk.Combined}"));
+
+        var sw = Stopwatch.StartNew();
+        string pushTarget = target;
+        if (viaStaging)
+        {
+            pushTarget = StagingDir;
+            await adb.CaptureAsync(token, "shell", AdbClient.ShellJoin(new[] { "rm", "-rf", StagingDir }));
+            AdbResult st = await adb.CaptureAsync(token, "shell", AdbClient.ShellJoin(new[] { "mkdir", "-p", StagingDir }));
+            if (!st.Ok)
+                throw new AdbException(Loc.T($"Zwischenordner konnte nicht angelegt werden: {StagingDir}\n{st.Combined}", $"Could not create staging folder: {StagingDir}\n{st.Combined}"));
+        }
+
+        try
+        {
+            foreach (FileSystemInfo entry in entries)
+            {
+                token.ThrowIfCancellationRequested();
+                int exit = await adb.RunStreamingAsync(new[] { "push", entry.FullName, pushTarget + "/" }, (line, _) =>
+                {
+                    if (line.Trim().Length > 0) Log("   " + line.Trim());
+                }, token);
+                if (exit != 0)
+                    throw new AdbException(Loc.T($"{kind}: Kopieren fehlgeschlagen: {entry.Name}", $"{kind}: copy failed: {entry.Name}"));
+            }
+
+            if (viaStaging)
+            {
+                AdbResult cp = await adb.CaptureAsync(token, TimeSpan.FromHours(1), "shell",
+                    $"cp -r {AdbClient.ShellQuote(StagingDir + "/.")} {AdbClient.ShellQuote(target + "/")} && echo ADBORA_OK");
+                if (!cp.Output.Contains("ADBORA_OK"))
+                    throw new AdbException(Loc.T($"{kind}: Kopieren auf dem Gerät fehlgeschlagen:\n{cp.Combined}", $"{kind}: copy on the device failed:\n{cp.Combined}"));
+            }
+        }
+        finally
+        {
+            if (viaStaging)
+            {
+                try { await adb.CaptureAsync(CancellationToken.None, "shell", AdbClient.ShellJoin(new[] { "rm", "-rf", StagingDir })); } catch { }
+            }
+        }
+        double seconds = Math.Max(0.001, sw.Elapsed.TotalSeconds);
+        Log(Loc.T($"✔ {kind} kopiert ({seconds:0.0} s, {total / 1024.0 / 1024.0 / seconds:0.0} MB/s)",
+                  $"✔ {kind} copied ({seconds:0.0} s, {total / 1024.0 / 1024.0 / seconds:0.0} MB/s)"));
     }
 
     // ------------------------------------------------------------------

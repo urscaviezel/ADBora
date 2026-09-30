@@ -61,8 +61,15 @@ Name: "{autodesktop}\ADBora"; Filename: "{app}\ADBora.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\ADBora.exe"; Description: "{cm:LaunchProgram,ADBora}"; Flags: nowait postinstall skipifsilent
+; Automatic update from within ADBora (/RELAUNCH=1): start the new version again
+Filename: "{app}\ADBora.exe"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [Code]
+function RelaunchAfterUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;

@@ -33,13 +33,15 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 |---|---|
 | **1 · Allgemeine Einstellungen** | Sprache, ADB einrichten (adb.exe wählen, automatisch suchen, Platform-Tools-Download, Einrichtungshilfe), Versionen (ADBora, ADB, Platform-Tools, .NET, Windows), Datenablage, angeschlossene Geräte, WLAN-ADB, Geräteinformationen (Hersteller, Modell, IPv4-Adresse, Android-Version, Sicherheitspatch, Chipsatz, RAM, Speicher, Akku, Display, Laufzeit) |
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
-| **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
+| **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
 | **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
 | **5 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓) und eigenen gespeicherten Befehlen |
+| **6 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
 
 Das **aktive Gerät** wird oben rechts gewählt und gilt für alle Tabs (mehrere
 Geräte werden unterstützt, ADB-Aufrufe laufen mit `-s <Seriennummer>`). Es läuft
-immer nur ein ADB-Vorgang gleichzeitig.
+immer nur ein ADB-Vorgang gleichzeitig. Wird ADBora während eines laufenden
+Vorgangs (z. B. Backup) geschlossen, fragt es vorher nach.
 
 ### ADB / Android Platform Tools
 
@@ -83,9 +85,24 @@ Speicherort/
   (`adb install -r`). Optional `-d` (Downgrade) und `-g` (Berechtigungen).
 - **Backup-Ordner:** App-Ordner `Name [Paket]` hineinziehen – installiert `APK/`
   und kopiert `OBB/`.
+- **Batch-Restore:** „Batch-Restore …“ oder einen ganzen Backup-Ordner (`Backup_…`
+  oder den Ordner mit mehreren Backups) auf das APK-Feld ziehen. In der Liste pro
+  App wählen, was wiederhergestellt wird: **APK** installieren → **OBB** nach
+  `/sdcard/Android/obb/<Paket>` → **Daten** nach `/sdcard/Android/data/<Paket>`
+  (die App wird vorher beendet; die Daten laufen über `/data/local/tmp`, weil
+  neuere Android-Versionen `adb push` direkt nach `Android/data` ablehnen).
 - **OBB:** Ordner hineinziehen; Paketname aus Ordnername, Backup-Ordner,
   `manifest.json` oder `main.<Version>.<Paket>.obb`, sonst Nachfrage.
 - **Explorer:** öffnet das Gerät unter „Dieser PC“ (MTP), sonst „Dieser PC“.
+
+### Updates
+
+ADBora prüft beim Start (abschaltbar im Tab „Build Info“) die neueste Version auf
+GitHub. Bei einem Update erscheinen die Versionshinweise; **„Jetzt aktualisieren“**
+lädt das passende Paket (SHA-256-geprüft): die installierte Version wird still per
+Setup aktualisiert, die portable Version direkt im Programmordner (der Ordner
+`Data` bleibt erhalten). ADBora startet danach automatisch neu. Einzelne Versionen
+lassen sich überspringen.
 
 ### WLAN-ADB
 
@@ -164,13 +181,15 @@ backups are never deleted. The current data location is shown in
 |---|---|
 | **1 · General settings** | Language, ADB setup (choose adb.exe, auto search, Platform-Tools download, setup help), versions (ADBora, ADB, Platform-Tools, .NET, Windows), data storage, connected devices, Wi-Fi ADB, device information (manufacturer, model, IPv4 address, Android version, security patch, chipset, RAM, storage, battery, display, uptime) |
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
-| **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
+| **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
 | **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
 | **5 · ADB commands** | ADB commands with live output, stop, history (↑/↓) and your own saved commands |
+| **6 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
 
 The **active device** is selected at the top right and applies to all tabs
 (several devices supported, ADB calls use `-s <serial>`). Only one ADB operation
-runs at a time.
+runs at a time. If ADBora is closed while an operation (e.g. a backup) is running,
+it asks first.
 
 ### ADB / Android Platform Tools
 
@@ -203,9 +222,22 @@ metadata cache (metadata only).
   installed together as a split app (`adb install-multiple -r`), otherwise one
   by one (`adb install -r`). Optional `-d` (downgrade) and `-g` (permissions).
 - **Backup folder:** drop an app folder `Name [package]` – installs `APK/` and copies `OBB/`.
+- **Batch restore:** click "Batch restore …" or drop a whole backup folder (`Backup_…`
+  or the folder containing several backups) onto the APK field. Choose per app what
+  to restore: install **APK** → **OBB** to `/sdcard/Android/obb/<package>` → **data**
+  to `/sdcard/Android/data/<package>` (the app is stopped first; data goes through
+  `/data/local/tmp` because newer Android versions refuse `adb push` into `Android/data`).
 - **OBB:** drop a folder; package name from the folder name, backup folder,
   `manifest.json` or `main.<version>.<package>.obb`, otherwise you are asked.
 - **Explorer:** opens the device under "This PC" (MTP), otherwise "This PC".
+
+### Updates
+
+At start (can be switched off in the "Build info" tab) ADBora checks GitHub for the
+latest version. If there is an update, the release notes are shown; **"Update now"**
+downloads the matching package (SHA-256 verified): the installed version is updated
+silently by its setup, the portable version directly in its program folder (the
+`Data` folder is kept). ADBora restarts automatically. Single versions can be skipped.
 
 ### Wi-Fi ADB
 

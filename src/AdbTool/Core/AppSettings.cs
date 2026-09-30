@@ -24,6 +24,10 @@ internal sealed class AppSettings
     public int WindowHeight { get; set; } = 900;
     public bool WindowMaximized { get; set; }
 
+    // Updates
+    public bool CheckUpdatesOnStart { get; set; } = true;
+    public string SkippedUpdateVersion { get; set; } = "";
+
     // Backup
     public string BackupDestination { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "APK-Backups");

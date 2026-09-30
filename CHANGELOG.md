@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.1.0 – 2026-09-30
+
+**Deutsch**
+
+- **Batch-Restore** (Tab „APK Install“): ganzen Backup-Ordner laden oder hineinziehen,
+  pro App APK / OBB / Daten auswählen und in einem Rutsch wiederherstellen
+- Neuer Tab **Build Info**: Version, Build-Datum, Variante, .NET, ADB, Repo, Datenordner, Lizenz
+- **Update-Prüfung** beim Start und auf Knopfdruck, **Auto-Update** für Installer- und
+  portable Version (Download SHA-256-geprüft, Neustart danach)
+- Warnung beim Schließen, solange ein Vorgang (z. B. Backup) läuft
+
+**English**
+
+- **Batch restore** ("APK install" tab): load or drop a whole backup folder, choose
+  APK / OBB / data per app and restore them in one go
+- New **Build info** tab: version, build date, variant, .NET, ADB, repo, data folder, license
+- **Update check** at start and on demand, **auto-update** for the installed and the
+  portable version (SHA-256 verified download, restart afterwards)
+- Warning when closing while an operation (e.g. a backup) is running
+
 ## v1.0.0 – 2026-09-30
 
 Erste Veröffentlichung von **ADBora – Android Device Toolbox** · First release.

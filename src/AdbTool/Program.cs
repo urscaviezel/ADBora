@@ -26,6 +26,11 @@ internal static class Program
         Application.ThreadException += (_, e) => ReportCrash(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportCrash(e.ExceptionObject as Exception);
 
+        // Test switch: behave as if an older version were installed (update check).
+        int pretend = Array.IndexOf(args, "--pretend-version");
+        if (pretend >= 0 && pretend + 1 < args.Length)
+            Updater.PretendVersion = args[pretend + 1];
+
         ApplicationConfiguration.Initialize();
         Theme.InitScale();
         Application.Run(new MainForm(args.Contains("--smoke-test")));
