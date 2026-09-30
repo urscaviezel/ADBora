@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+_dev/
+.vs/
+*.user
+build/adb/*.exe
+build/adb/*.dll

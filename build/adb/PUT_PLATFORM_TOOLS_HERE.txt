@@ -1,0 +1,3 @@
+Optional: copy adb.exe, AdbWinApi.dll and AdbWinUsbApi.dll from Android SDK
+Platform Tools into this folder to bundle ADB with the build (dist\ADB_Tool\adb).
+Download: https://developer.android.com/tools/releases/platform-tools
