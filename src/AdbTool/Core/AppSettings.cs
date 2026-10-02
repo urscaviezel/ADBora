@@ -31,6 +31,7 @@ internal sealed class AppSettings
     // Backup
     public string BackupDestination { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "APK-Backups");
+    public bool BackupSplitsAsApks { get; set; } = true;
 
     // Speed test
     public int SpeedPort { get; set; } = 5001;

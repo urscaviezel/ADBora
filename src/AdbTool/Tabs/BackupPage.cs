@@ -22,6 +22,7 @@ internal sealed class BackupPage : UserControl, IPage
     private readonly Label _count = Ui.Value("");
     private readonly TextBox _destination = Ui.TextBox(520);
     private readonly DarkButton _browse = Ui.Button("Ordner wählen …", "Choose folder …");
+    private readonly CheckBox _bundleSplits = Ui.CheckBox("Split-Apps als eine .apks-Datei speichern (wie SAI / AnExplorer)", "Save split apps as one .apks file (like SAI / AnExplorer)");
     private readonly DarkButton _backup = Ui.Button("Auswahl sichern", "Back up selection", ButtonKind.Primary);
     private readonly DarkButton _abort = Ui.Button("Abbrechen", "Cancel", ButtonKind.Danger);
     private readonly DarkButton _openFolder = Ui.Button("Backup öffnen", "Open backup");
@@ -136,6 +137,10 @@ internal sealed class BackupPage : UserControl, IPage
         destRow.Controls.Add(_destination, 1, 0);
         destRow.Controls.Add(_browse, 2, 0);
         AddRow(destRow);
+        _bundleSplits.Checked = _state.Settings.BackupSplitsAsApks;
+        _bundleSplits.CheckedChanged += (_, _) => { _state.Settings.BackupSplitsAsApks = _bundleSplits.Checked; _state.Settings.Save(); };
+        _bundleSplits.Margin = new Padding(0, 0, 0, 6);
+        AddRow(_bundleSplits);
 
         // Actions ---------------------------------------------------------
         _backup.Click += async (_, _) => await BackupAsync();
@@ -489,7 +494,7 @@ internal sealed class BackupPage : UserControl, IPage
         bool idle = !_state.IsBusy;
         _scan.Enabled = idle;
         _selectAll.Enabled = _selectNone.Enabled = idle && _apps.Count > 0;
-        _destination.Enabled = _browse.Enabled = idle;
+        _destination.Enabled = _browse.Enabled = _bundleSplits.Enabled = idle;
         _backup.Enabled = idle && _apps.Count > 0;
         _abort.Enabled = mine && !_cts!.IsCancellationRequested;
     }
@@ -622,7 +627,10 @@ internal sealed class BackupPage : UserControl, IPage
         var log = new Progress<string>(OnMessage);
         var progress = new Progress<(int, int)>(OnProgress);
         var service = new BackupService(new AdbClient(_state.AdbPath!, device.Serial),
-            ((IProgress<string>)log).Report, (c, t) => ((IProgress<(int, int)>)progress).Report((c, t)), _cts.Token);
+            ((IProgress<string>)log).Report, (c, t) => ((IProgress<(int, int)>)progress).Report((c, t)), _cts.Token)
+        {
+            BundleSplits = _bundleSplits.Checked
+        };
 
         try
         {

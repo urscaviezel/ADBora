@@ -79,6 +79,9 @@ internal sealed class BackupService
     private readonly Action<int, int> _progress;
     private readonly CancellationToken _token;
 
+    /// <summary>Store split apps as one .apks file (like SAI / AnExplorer) instead of single APKs.</summary>
+    public bool BundleSplits { get; init; }
+
     public BackupService(AdbClient adb, Action<string> log, Action<int, int> progress, CancellationToken token)
     {
         _adb = adb;
@@ -414,32 +417,77 @@ internal sealed class BackupService
         return names;
     }
 
-    public static string InstallInstructions(List<string> fileNames)
+    /// <summary>INSTALL.txt next to the APK folder.</summary>
+    public static string InstallInstructions(List<string> fileNames, List<string> bundleEntries)
     {
+        bool bundle = bundleEntries.Count > 0;
         string arguments = string.Join(" ", fileNames.Select(n => "'.\\APK\\" + n.Replace("'", "''") + "'"));
         string verb = fileNames.Count > 1 ? "install-multiple" : "install";
-        string command = $"& adb -s 'DEVICE_SERIAL' {verb} -r {arguments}";
+        string command = $"adb {verb} -r {arguments}";
+        string manualDe = bundle
+            ? "Die Split-APKs liegen zusammen in einer .apks-Datei (ZIP). Installieren mit ADBora (Tab „APK Install“,\n" +
+              "Datei hineinziehen), mit SAI / AnExplorer oder per INSTALL.cmd. Manuell: .apks wie ein ZIP entpacken und\n" +
+              "alle enthaltenen APKs gemeinsam mit „adb install-multiple -r <alle .apk>“ installieren.\n"
+            : "Öffne PowerShell in DIESEM Ordner (Explorer: Adressleiste „powershell“ eintippen) und führe aus:\n\n" + command + "\n\n" +
+              "Bei mehreren verbundenen Geräten nach „adb“ noch „-s <Seriennummer>“ einfügen (Seriennummer: adb devices).\n";
+        string manualEn = bundle
+            ? "The split APKs are stored together in one .apks file (ZIP). Install it with ADBora (\"APK install\" tab,\n" +
+              "drop the file), with SAI / AnExplorer or via INSTALL.cmd. Manually: extract the .apks like a ZIP and\n" +
+              "install all contained APKs together with \"adb install-multiple -r <all .apk>\".\n"
+            : "Open PowerShell in THIS folder (Explorer: type \"powershell\" into the address bar) and run:\n\n" + command + "\n\n" +
+              "With several connected devices add \"-s <serial>\" after \"adb\" (serial: adb devices).\n";
         return
             "APK INSTALLATION / INSTALLATION DER APKs\n\n" +
             "DEUTSCH\n" +
+            "Am einfachsten: Gerät verbinden (USB-Debugging erlaubt) und INSTALL.cmd doppelklicken.\n" +
+            "Bei mehreren Geräten: INSTALL.cmd <Seriennummer> in der Eingabeaufforderung starten.\n" +
             "Die APK-Dateien sind unveränderte Kopien vom Gerät, einschließlich ihrer Signaturen.\n" +
-            "Bei mehreren APKs gehören Basis und alle Splits zusammen. Nicht einzeln installieren.\n" +
-            "Öffne PowerShell in diesem Ordner. Verbinde das Zielgerät und bestätige USB-Debugging.\n" +
-            "Führe adb devices aus und ersetze DEVICE_SERIAL unten durch die gewünschte Seriennummer.\n" +
-            "ADB muss im PATH liegen; alternativ ersetze adb durch den in Anführungszeichen gesetzten\n" +
-            "vollständigen Pfad zur adb.exe. Der Befehl installiert bzw. aktualisiert die App.\n\n" +
-            command + "\n\n" +
+            "Bei Split-Apps gehören Basis und alle Splits zusammen – nie einzeln installieren.\n\n" +
+            manualDe + "\n" +
             "ENGLISH\n" +
-            "These APK files are unchanged copies from the device, including their signatures.\n" +
-            "For split apps, install the base APK and all splits together, never individually.\n" +
-            "Open PowerShell in this folder. Connect the target device and authorize USB debugging.\n" +
-            "Run adb devices and replace DEVICE_SERIAL above with the desired device serial.\n" +
-            "ADB must be on PATH; otherwise replace adb with the quoted full path to adb.exe.\n" +
-            "The command installs or updates the app.\n\n" +
-            "DE: OBB/Data werden nicht durch diesen Befehl wiederhergestellt. Gerätekompatibilität,\n" +
-            "Android-Version, App-Signatur, Systemrechte und Lizenz können eine Installation verhindern.\n" +
-            "EN: This command does not restore OBB/Data. Device compatibility, Android version,\n" +
-            "app signatures, system permissions and licensing may prevent installation.\n";
+            "Easiest: connect the device (USB debugging allowed) and double-click INSTALL.cmd.\n" +
+            "With several devices: run INSTALL.cmd <serial> from a command prompt.\n" +
+            "The APK files are unchanged copies from the device, including their signatures.\n" +
+            "For split apps, base and all splits belong together – never install them individually.\n\n" +
+            manualEn + "\n" +
+            "DE: OBB/Data werden nur von ADBora (Batch-Restore) wiederhergestellt, nicht von INSTALL.cmd.\n" +
+            "EN: OBB/Data are restored by ADBora (batch restore) only, not by INSTALL.cmd.\n";
+    }
+
+    /// <summary>INSTALL.cmd: double-click installer for the app (single, split or .apks bundle).</summary>
+    public static string InstallScript(List<string> fileNames, List<string> bundleEntries, string adbPath)
+    {
+        static string Cmd(string value) => value.Replace("%", "%%");
+        var sb = new StringBuilder();
+        sb.Append("@echo off\r\n");
+        sb.Append("chcp 65001 >nul\r\n");
+        sb.Append("rem ADBora - installs this app on the connected device. Usage: INSTALL.cmd [serial]\r\n");
+        sb.Append("cd /d \"%~dp0\"\r\n");
+        sb.Append("set \"ADB=adb\"\r\n");
+        sb.Append($"where adb >nul 2>nul || set \"ADB={Cmd(adbPath)}\"\r\n");
+        sb.Append("set \"SERIAL=\"\r\n");
+        sb.Append("if not \"%~1\"==\"\" set \"SERIAL=-s %~1\"\r\n");
+        if (bundleEntries.Count > 0)
+        {
+            sb.Append("set \"T=%TEMP%\\adbora-install-%RANDOM%%RANDOM%\"\r\n");
+            // Path via environment variable: PowerShell cannot use folders with [ ] as its location.
+            sb.Append($"set \"APKS=%~dp0APK\\{Cmd(fileNames[0])}\"\r\n");
+            sb.Append("powershell -NoProfile -ExecutionPolicy Bypass -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:APKS, $env:T)\"\r\n");
+            sb.Append("if errorlevel 1 goto failed\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% install-multiple -r " + string.Join(" ", bundleEntries.Select(e => $"\"%T%\\{Cmd(e)}\"")) + "\r\n");
+            sb.Append("set \"RC=%ERRORLEVEL%\"\r\n");
+            sb.Append("rmdir /s /q \"%T%\" >nul 2>nul\r\n");
+            sb.Append("if not \"%RC%\"==\"0\" goto failed\r\n");
+        }
+        else
+        {
+            string verb = fileNames.Count > 1 ? "install-multiple" : "install";
+            sb.Append($"\"%ADB%\" %SERIAL% {verb} -r " + string.Join(" ", fileNames.Select(n => $"\"APK\\{Cmd(n)}\"")) + "\r\n");
+            sb.Append("if errorlevel 1 goto failed\r\n");
+        }
+        sb.Append("echo.\r\necho OK\r\npause\r\nexit /b 0\r\n");
+        sb.Append(":failed\r\necho.\r\necho Installation fehlgeschlagen / installation failed\r\npause\r\nexit /b 1\r\n");
+        return sb.ToString();
     }
 
     public async Task<BackupReport> BackupAsync(List<BackupSelection> selections, string destination, string deviceModel)
@@ -506,6 +554,7 @@ internal sealed class BackupService
                         try
                         {
                             List<string> fileNames = new();
+                            List<string> bundleEntries = new();
                             if (kind == "APK")
                             {
                                 if (app.Apks.Count == 0)
@@ -513,6 +562,24 @@ internal sealed class BackupService
                                 fileNames = ApkFileNames(app);
                                 for (int i = 0; i < app.Apks.Count; i++)
                                     await PullApkAsync(app.Apks[i], Path.Combine(staging, fileNames[i]));
+
+                                if (BundleSplits && fileNames.Count > 1)
+                                {
+                                    // One .apks file (ZIP) with the original device file names, like SAI / AnExplorer
+                                    var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    var entries = new List<(string File, string EntryName)>();
+                                    for (int i = 0; i < fileNames.Count; i++)
+                                    {
+                                        string entryName = app.Apks[i][(app.Apks[i].LastIndexOf('/') + 1)..];
+                                        while (!used.Add(entryName)) entryName = $"{i:00}_" + entryName;
+                                        entries.Add((Path.Combine(staging, fileNames[i]), entryName));
+                                    }
+                                    string bundleName = SafeName(app.Name, 65) + (app.Version.Length > 0 ? "-" + SafeName(app.Version, 24) : "") + ".apks";
+                                    ApkBundle.Create(Path.Combine(staging, bundleName), entries);
+                                    foreach (var (file, _) in entries) File.Delete(file);
+                                    bundleEntries = entries.Select(e => e.EntryName).ToList();
+                                    fileNames = new List<string> { bundleName };
+                                }
                             }
                             else
                             {
@@ -549,8 +616,11 @@ internal sealed class BackupService
                             if (kind == "APK")
                             {
                                 Directory.Move(staging, Path.Combine(folder, "APK"));
-                                await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.txt"), InstallInstructions(fileNames), new UTF8Encoding(false), CancellationToken.None);
-                                json["apk_type"] = fileNames.Count > 1 ? "split" : "single";
+                                await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.txt"), InstallInstructions(fileNames, bundleEntries), new UTF8Encoding(false), CancellationToken.None);
+                                await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.cmd"), InstallScript(fileNames, bundleEntries, _adb.Executable), new UTF8Encoding(false), CancellationToken.None);
+                                json["apk_type"] = bundleEntries.Count > 0 ? "split-apks" : fileNames.Count > 1 ? "split" : "single";
+                                if (bundleEntries.Count > 0)
+                                    json["apks_entries"] = new JsonArray(bundleEntries.Select(n => (JsonNode?)n).ToArray());
                                 json["apk_files"] = new JsonArray(fileNames.Select(n => (JsonNode?)("APK/" + n)).ToArray());
                             }
                             else

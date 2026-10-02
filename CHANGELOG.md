@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.2.0 – 2026-10-02
+
+**Deutsch**
+
+- **.apks-Unterstützung:** Split-Apps werden im Backup als eine `.apks`-Datei gespeichert
+  (wie SAI / AnExplorer, abschaltbar); `.apks`, `.xapk` (inkl. OBB) und unverschlüsselte
+  `.apkm` lassen sich per Drag & Drop, „APK auswählen“ und Batch-Restore installieren
+- Jedes App-Backup enthält ein **INSTALL.cmd** zum Doppelklicken (optional mit Seriennummer
+  als Parameter); INSTALL.txt erklärt den manuellen Weg verständlicher
+- Installation: bei Übertragungsfehlern automatisch ein zweiter Versuch ohne Streaming
+
+**English**
+
+- **.apks support:** split apps are stored as one `.apks` file in backups (like SAI /
+  AnExplorer, can be switched off); `.apks`, `.xapk` (incl. OBB) and unencrypted `.apkm`
+  can be installed via drag & drop, "Choose APK" and batch restore
+- Every app backup contains an **INSTALL.cmd** to double-click (optionally with the serial
+  as parameter); INSTALL.txt explains the manual way more clearly
+- Install: on transfer errors a second attempt without streaming is made automatically
+
 ## v1.1.0 – 2026-09-30
 
 **Deutsch**

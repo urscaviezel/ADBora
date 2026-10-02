@@ -55,7 +55,7 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 | Komponente | Quelle auf Android | Ziel im App-Ordner |
 |---|---|---|
-| APK | alle von `pm path` gemeldeten APKs | `APK/App-Name-Version.apk` bzw. Basis + Splits |
+| APK | alle von `pm path` gemeldeten APKs | `APK/App-Name-Version.apk`; Split-Apps als eine `App-Name-Version.apks` (abschaltbar, dann Basis + Splits einzeln) |
 | OBB | `/sdcard/Android/obb/<Paket>` | `OBB/` |
 | Daten | `/sdcard/Android/data/<Paket>` | `Data/` |
 
@@ -73,6 +73,7 @@ Speicherort/
   Backup_2026-09-30_11-42-58_21264b/
     App-Name [com.example]/
       APK/  OBB/  Data/
+      INSTALL.cmd
       INSTALL.txt
       manifest.json
     backup-report.json
@@ -80,7 +81,8 @@ Speicherort/
 
 ### APK Install
 
-- **APK:** eine oder mehrere `.apk` hineinziehen. Mehrere APKs desselben Pakets
+- **APK:** eine oder mehrere `.apk` hineinziehen – oder App-Pakete `.apks` (SAI,
+  AnExplorer, ADBora), `.xapk` (inkl. OBB) und unverschlüsselte `.apkm`. Mehrere APKs desselben Pakets
   werden als Split-App installiert (`adb install-multiple -r`), sonst einzeln
   (`adb install -r`). Optional `-d` (Downgrade) und `-g` (Berechtigungen).
 - **Backup-Ordner:** App-Ordner `Name [Paket]` hineinziehen – installiert `APK/`
@@ -203,7 +205,7 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 | Component | Source on Android | Target in the app folder |
 |---|---|---|
-| APK | all APKs reported by `pm path` | `APK/App-Name-Version.apk` or base + splits |
+| APK | all APKs reported by `pm path` | `APK/App-Name-Version.apk`; split apps as one `App-Name-Version.apks` (can be switched off, then base + splits as single files) |
 | OBB | `/sdcard/Android/obb/<package>` | `OBB/` |
 | Data | `/sdcard/Android/data/<package>` | `Data/` |
 
@@ -218,7 +220,8 @@ metadata cache (metadata only).
 
 ### APK install
 
-- **APK:** drop one or more `.apk` files. Several APKs of the same package are
+- **APK:** drop one or more `.apk` files – or app bundles `.apks` (SAI, AnExplorer,
+  ADBora), `.xapk` (incl. OBB) and unencrypted `.apkm`. Several APKs of the same package are
   installed together as a split app (`adb install-multiple -r`), otherwise one
   by one (`adb install -r`). Optional `-d` (downgrade) and `-g` (permissions).
 - **Backup folder:** drop an app folder `Name [package]` – installs `APK/` and copies `OBB/`.

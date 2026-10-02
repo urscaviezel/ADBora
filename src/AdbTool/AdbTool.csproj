@@ -13,7 +13,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <ApplicationIcon>ADBora.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>ADBora</Product>
     <Authors>urscaviezel</Authors>
     <Description>ADBora – Android Device Toolbox: APK backup and install, speed test and ADB console.</Description>

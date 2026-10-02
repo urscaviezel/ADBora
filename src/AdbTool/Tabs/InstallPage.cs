@@ -20,8 +20,8 @@ internal sealed class InstallPage : UserControl, IPage
     private readonly AppState _state;
     private readonly DropZone _apkZone = new("",
         "APK hierher ziehen", "Drop APK here",
-        "Eine oder mehrere .apk-Dateien (Split-APKs werden erkannt), einen App-Ordner oder einen ganzen Backup-Ordner",
-        "One or more .apk files (split APKs are detected), an app folder or a whole backup folder");
+        ".apk (Split-APKs werden erkannt), .apks / .xapk / .apkm, einen App-Ordner oder einen ganzen Backup-Ordner",
+        ".apk (split APKs are detected), .apks / .xapk / .apkm, an app folder or a whole backup folder");
     private readonly DropZone _obbZone = new("",
         "OBB-Ordner hierher ziehen", "Drop OBB folder here",
         "Ordner mit dem Paketnamen (z. B. com.firma.spiel) oder .obb-Dateien – Ziel: /sdcard/Android/obb/<Paket>",
@@ -63,7 +63,7 @@ internal sealed class InstallPage : UserControl, IPage
         apkBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _apkZone.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _apkZone.Margin = new Padding(0, 0, 0, 8);
-        _apkZone.Accepts = paths => paths.Any(p => Directory.Exists(p) || p.EndsWith(".apk", StringComparison.OrdinalIgnoreCase));
+        _apkZone.Accepts = paths => paths.Any(p => Directory.Exists(p) || ApkBundle.IsInstallable(p));
         _apkZone.Dropped += async paths => await InstallAsync(paths);
         _apkZone.Click += (_, _) => PickApk();
         _pickApk.Click += (_, _) => PickApk();
@@ -212,7 +212,7 @@ internal sealed class InstallPage : UserControl, IPage
         using var dialog = new OpenFileDialog
         {
             Title = Loc.T("APK auswählen", "Choose APK"),
-            Filter = "Android APK (*.apk)|*.apk",
+            Filter = Loc.T("Android-Apps", "Android apps") + " (*.apk; *.apks; *.xapk; *.apkm)|*.apk;*.apks;*.xapk;*.apkm",
             Multiselect = true
         };
         if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
@@ -244,7 +244,11 @@ internal sealed class InstallPage : UserControl, IPage
 
         foreach (string path in paths)
         {
-            if (File.Exists(path) && path.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
+            if (File.Exists(path) && ApkBundle.IsBundle(path))
+            {
+                jobs.Add(new InstallJob(Path.GetFileName(path), new List<string> { path }, null, null));
+            }
+            else if (File.Exists(path) && path.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
             {
                 loose.Add(path);
             }
@@ -256,7 +260,14 @@ internal sealed class InstallPage : UserControl, IPage
                 var apks = Directory.GetFiles(sourceDir, "*.apk").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
                 string obbDir = Path.Combine(path, "OBB");
                 string? obbPackage = Directory.Exists(obbDir) ? PackageForFolder(obbDir) : null;
-                if (apks.Count > 0)
+                var bundles = Directory.GetFiles(sourceDir).Where(ApkBundle.IsBundle).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+                if (apks.Count == 0 && bundles.Count > 0)
+                {
+                    for (int b = 0; b < bundles.Count; b++)
+                        jobs.Add(new InstallJob(Path.GetFileName(bundles[b]), new List<string> { bundles[b] },
+                            b == 0 && Directory.Exists(obbDir) ? obbDir : null, b == 0 ? obbPackage : null));
+                }
+                else if (apks.Count > 0)
                     jobs.AddRange(GroupApks(apks, Directory.Exists(obbDir) ? obbDir : null, obbPackage));
                 else
                     Log(Loc.T($"Keine APK gefunden in: {path}", $"No APK found in: {path}"));
@@ -373,19 +384,65 @@ internal sealed class InstallPage : UserControl, IPage
         }
     }
 
-    /// <summary>adb install / install-multiple with the chosen options; logs the result.</summary>
-    private async Task<bool> InstallApksAsync(AdbClient adb, List<string> apks, CancellationToken token)
+    /// <summary>
+    /// adb install / install-multiple with the chosen options; logs the result.
+    /// .apks / .xapk / .apkm bundles are unpacked first (OBB of an .xapk is copied after the install).
+    /// </summary>
+    private async Task<bool> InstallApksAsync(AdbClient adb, List<string> files, CancellationToken token)
+    {
+        var apks = new List<string>();
+        var temps = new List<string>();
+        var obbs = new List<(string Folder, string Package)>();
+        try
+        {
+            foreach (string file in files)
+            {
+                if (!ApkBundle.IsBundle(file)) { apks.Add(file); continue; }
+                Log(Loc.T($"   Entpacke {Path.GetFileName(file)} …", $"   Unpacking {Path.GetFileName(file)} …"));
+                ApkBundle.Expanded expanded = await Task.Run(() => ApkBundle.Expand(file, AppSettings.TempDirectory), token);
+                temps.Add(Path.GetDirectoryName(expanded.Apks[0])!);
+                apks.AddRange(expanded.Apks);
+                Log("   " + string.Join(", ", expanded.Apks.Select(Path.GetFileName)));
+                if (expanded.ObbFolder is not null && expanded.ObbPackage is not null)
+                    obbs.Add((expanded.ObbFolder, expanded.ObbPackage));
+            }
+
+            bool installed = await RunInstallAsync(adb, apks, streaming: true, token);
+            if (installed)
+            {
+                foreach (var (folder, package) in obbs)
+                    await PushTreeAsync(adb, folder, $"/sdcard/Android/obb/{package}", "OBB", token);
+            }
+            return installed;
+        }
+        catch (AdbException ex)
+        {
+            Log("✖ " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            foreach (string t in temps) ApkBundle.TryDelete(t);
+        }
+    }
+
+    private async Task<bool> RunInstallAsync(AdbClient adb, List<string> apks, bool streaming, CancellationToken token)
     {
         var args = new List<string> { apks.Count > 1 ? "install-multiple" : "install", "-r" };
         if (_downgrade.Checked) args.Add("-d");
         if (_grant.Checked) args.Add("-g");
+        if (!streaming) args.Add("--no-streaming");
         args.AddRange(apks);
 
         bool success = false;
+        bool packageManagerError = false;
         var sw = Stopwatch.StartNew();
         int exit = await adb.RunStreamingAsync(args, (line, _) =>
         {
-            if (line.Trim().StartsWith("Success", StringComparison.OrdinalIgnoreCase)) success = true;
+            string t = line.Trim();
+            if (t.StartsWith("Success", StringComparison.OrdinalIgnoreCase)) success = true;
+            if (t.Contains("INSTALL_FAILED_", StringComparison.Ordinal) || t.Contains("INSTALL_PARSE_FAILED_", StringComparison.Ordinal))
+                packageManagerError = true;
             Log("   " + line);
         }, token);
 
@@ -394,6 +451,16 @@ internal sealed class InstallPage : UserControl, IPage
             Log(Loc.T($"✔ Installiert ({sw.Elapsed.TotalSeconds:0.0} s)", $"✔ Installed ({sw.Elapsed.TotalSeconds:0.0} s)"));
             return true;
         }
+
+        // Transfer problems (e.g. "Broken pipe" during a streamed install) often succeed on a second,
+        // non-streamed attempt. Real package manager errors (INSTALL_FAILED_…) are not retried.
+        if (streaming && !packageManagerError)
+        {
+            Log(Loc.T("   Übertragung fehlgeschlagen – zweiter Versuch ohne Streaming …", "   Transfer failed – second attempt without streaming …"));
+            await Task.Delay(1500, token);
+            return await RunInstallAsync(adb, apks, streaming: false, token);
+        }
+
         Log(Loc.T("✖ Installation fehlgeschlagen", "✖ Installation failed"));
         return false;
     }

@@ -45,7 +45,7 @@ internal static class BackupScanner
         {
             if (File.Exists(Path.Combine(dir, "manifest.json"))) return true;
             string apk = Path.Combine(dir, "APK");
-            return Directory.Exists(apk) && Directory.EnumerateFiles(apk, "*.apk").Any();
+            return Directory.Exists(apk) && Directory.EnumerateFiles(apk).Any(ApkBundle.IsInstallable);
         }
         catch { return false; }
     }
@@ -135,9 +135,9 @@ internal static class BackupScanner
             if (entry.Apks.Count != files.Count) entry.Apks.Clear(); // incomplete: fall back below
         }
         if (entry.Apks.Count == 0 && Directory.Exists(apkDir))
-            entry.Apks.AddRange(Directory.GetFiles(apkDir, "*.apk").OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+            entry.Apks.AddRange(InstallFiles(apkDir));
         if (entry.Apks.Count == 0) // older backup layout: APKs directly in the app folder
-            entry.Apks.AddRange(Directory.GetFiles(folder, "*.apk").OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+            entry.Apks.AddRange(InstallFiles(folder));
         entry.ApkBytes = entry.Apks.Sum(f => new FileInfo(f).Length);
 
         if (entry.Package.Length == 0 && entry.Apks.Count > 0)
@@ -154,6 +154,14 @@ internal static class BackupScanner
         entry.Obb = entry.HasObb;
         entry.Data = entry.HasData;
         return entry;
+    }
+
+    /// <summary>Single/split APKs, or – if there are none – one .apks/.xapk/.apkm bundle.</summary>
+    private static IEnumerable<string> InstallFiles(string dir)
+    {
+        var apks = Directory.GetFiles(dir, "*.apk").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        if (apks.Count > 0) return apks;
+        return Directory.GetFiles(dir).Where(ApkBundle.IsBundle).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).Take(1);
     }
 
     private static (string?, long) Payload(string dir)
