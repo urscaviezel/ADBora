@@ -61,7 +61,8 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 Private Daten unter `/data/data` (Logins, interne Datenbanken, viele Spielstände)
 sind **nicht** enthalten; es werden keine Root-Rechte verwendet. Verweigert ein
-Gerät `adb pull`, wird `adb exec-out cat` verwendet. Jede APK wird erst nach
+Gerät `adb pull`, wird `adb exec-out cat` verwendet. Einzelne Dateien, die ADB nicht lesen darf
+(z. B. Shader-Caches mancher Spiele), werden übersprungen und in `manifest.json` aufgeführt. Jede APK wird erst nach
 Grössen-, ZIP- und (falls verfügbar) SHA-256-Prüfung übernommen. App-Name,
 Version und Icon werden im Metadaten-Cache gespeichert (nur Metadaten).
 
@@ -211,7 +212,8 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 Private data in `/data/data` (logins, internal databases, many save games) is
 **not** included; no root access is used. If a device refuses `adb pull`,
-`adb exec-out cat` is used. Every APK is only kept after size, ZIP and (if
+`adb exec-out cat` is used. Single files ADB may not read (e.g. shader caches of
+some games) are skipped and listed in `manifest.json`. Every APK is only kept after size, ZIP and (if
 available) SHA-256 verification. App name, version and icon are stored in the
 metadata cache (metadata only).
 

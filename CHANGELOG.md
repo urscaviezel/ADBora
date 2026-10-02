@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.1 – 2026-10-02
+
+- DE: Daten-/OBB-Backup bricht nicht mehr ab, wenn einzelne Dateien für ADB nicht lesbar sind
+  (z. B. Vulkan-Shader-Caches mancher Spiele). Die übrigen Dateien werden einzeln kopiert,
+  gesperrte Dateien übersprungen und in `manifest.json` („skipped_unreadable“) aufgelistet.
+- EN: Data/OBB backups no longer fail when single files cannot be read by ADB (e.g. Vulkan
+  shader caches of some games). The remaining files are copied one by one, blocked files are
+  skipped and listed in `manifest.json` ("skipped_unreadable").
+
 ## v1.2.0 – 2026-10-02
 
 **Deutsch**

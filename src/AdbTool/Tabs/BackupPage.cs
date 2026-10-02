@@ -640,8 +640,11 @@ internal sealed class BackupPage : UserControl, IPage
 
             int errors = report.Apps.Sum(a => a.Errors.Count);
             int completed = report.Apps.Sum(a => a.Completed.Count);
+            int skipped = report.Apps.Sum(a => a.Skipped.Count);
             string message = (report.Cancelled ? Loc.T("Backup abgebrochen", "Backup cancelled") : Loc.T("Backup beendet", "Backup finished")) +
                              Loc.T($": {completed} Komponenten gesichert, {errors} Fehler.", $": {completed} components saved, {errors} errors.") +
+                             (skipped > 0 ? Loc.T($"\n{skipped} Datei(en) ohne Leserechte übersprungen (meist Caches, die die App selbst neu erzeugt).",
+                                                  $"\n{skipped} file(s) without read permission skipped (usually caches the app recreates itself).") : "") +
                              "\n" + Loc.T($"Gerät: {report.DeviceModel} ({report.Device})", $"Device: {report.DeviceModel} ({report.Device})");
             OnMessage(message + Loc.T($"\nBericht: {Path.Combine(report.Directory, "backup-report.json")}", $"\nReport: {Path.Combine(report.Directory, "backup-report.json")}"));
 
@@ -652,6 +655,14 @@ internal sealed class BackupPage : UserControl, IPage
                     message + Loc.T("\nDetails stehen im Backup-Bericht. .partial-Ordner sind unvollständig.", "\nSee the backup report for details. .partial folders are incomplete.") +
                     (details.Length > 0 ? "\n\n" + (details.Length > 2500 ? details[..2500] + " …" : details) : ""),
                     Loc.T("Backup unvollständig", "Backup incomplete"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else if (skipped > 0)
+            {
+                string details = string.Join("\n", report.Apps.Where(a => a.Skipped.Count > 0)
+                    .Select(a => $"{a.Name}: " + string.Join(", ", a.Skipped.Take(3).Select(Path.GetFileName)) + (a.Skipped.Count > 3 ? $" (+{a.Skipped.Count - 3})" : "")));
+                MessageBox.Show(FindForm(), message + "\n\n" + (details.Length > 2000 ? details[..2000] + " …" : details) +
+                    Loc.T("\n\nDie vollständige Liste steht in manifest.json der App („skipped_unreadable“).", "\n\nThe full list is in the app's manifest.json (\"skipped_unreadable\")."),
+                    Loc.T("Backup abgeschlossen (mit Hinweisen)", "Backup complete (with notes)"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {

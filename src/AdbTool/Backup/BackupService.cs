@@ -56,6 +56,8 @@ internal sealed class BackupAppRecord
     public string Name { get; set; } = "";
     public List<string> Errors { get; } = new();
     public List<string> Completed { get; } = new();
+    /// <summary>Files that could not be read (e.g. no read permission for adb); the component still counts as saved.</summary>
+    public List<string> Skipped { get; } = new();
 }
 
 internal sealed class BackupReport
@@ -417,6 +419,71 @@ internal sealed class BackupService
         return names;
     }
 
+    private static string FirstLine(string text)
+    {
+        string line = text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? text;
+        return line.Length > 160 ? line[..160] + " …" : line;
+    }
+
+    /// <summary>
+    /// Copies a device folder file by file; unreadable files are skipped.
+    /// Files that are already complete locally (same size) are kept.
+    /// Returns the relative paths of the skipped files.
+    /// </summary>
+    private async Task<List<string>> PullTreeTolerantAsync(string source, string localRoot)
+    {
+        Directory.CreateDirectory(localRoot);
+        var skipped = new List<string>();
+
+        // Folders (keeps empty ones) and files with their sizes
+        AdbResult dirs = await _adb.CaptureAsync(_token, TimeSpan.FromMinutes(5), "shell", AdbClient.ShellJoin(new[] { "find", source, "-type", "d" }));
+        foreach (string dir in dirs.Output.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.StartsWith(source + "/", StringComparison.Ordinal)))
+        {
+            try { Directory.CreateDirectory(LocalPath(localRoot, dir[(source.Length + 1)..])); } catch { }
+        }
+
+        AdbResult files = await _adb.CaptureAsync(_token, TimeSpan.FromMinutes(5), "shell",
+            AdbClient.ShellJoin(new[] { "find", source, "-type", "f", "-exec", "stat", "-c", "%s|%n", "{}", "+" }));
+        var list = new List<(long Size, string Path)>();
+        foreach (string line in files.Output.Split('\n').Select(l => l.TrimEnd('\r')))
+        {
+            int bar = line.IndexOf('|');
+            if (bar <= 0 || !long.TryParse(line[..bar], out long size)) continue;
+            string path = line[(bar + 1)..];
+            if (path.StartsWith(source + "/", StringComparison.Ordinal)) list.Add((size, path));
+        }
+        if (list.Count == 0 && !files.Ok)
+            throw new AdbException(files.Combined.Trim());
+
+        foreach (var (size, remote) in list)
+        {
+            _token.ThrowIfCancellationRequested();
+            string relative = remote[(source.Length + 1)..];
+            string local;
+            try { local = LocalPath(localRoot, relative); }
+            catch { skipped.Add(relative); continue; }
+
+            if (File.Exists(local) && new FileInfo(local).Length == size)
+                continue; // already copied by the first "adb pull"
+
+            AdbResult pull = await _adb.CaptureAsync(_token, TimeSpan.FromHours(1), "pull", remote, local);
+            if (!pull.Ok)
+            {
+                skipped.Add(relative);
+                TryDelete(local);
+            }
+        }
+        return skipped;
+    }
+
+    private static string LocalPath(string root, string relative)
+    {
+        string full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!full.StartsWith(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Invalid path: " + relative);
+        return full;
+    }
+
     /// <summary>INSTALL.txt next to the APK folder.</summary>
     public static string InstallInstructions(List<string> fileNames, List<string> bundleEntries)
     {
@@ -587,7 +654,25 @@ internal sealed class BackupService
                                 if (state != FolderState.Present)
                                     throw new AdbException(Loc.T("Ordner ist nicht zugänglich", "Folder is inaccessible"));
                                 string source = $"/sdcard/Android/{(kind == "OBB" ? "obb" : "data")}/{app.Package}";
-                                await _adb.RunAsync(_token, TimeSpan.FromHours(1), "pull", source, Path.Combine(staging, "content"));
+                                string content = Path.Combine(staging, "content");
+                                try
+                                {
+                                    await _adb.RunAsync(_token, TimeSpan.FromHours(1), "pull", source, content);
+                                }
+                                catch (AdbException ex)
+                                {
+                                    // "adb pull" stops at the first unreadable file (e.g. a shader cache the app
+                                    // created with private permissions). Copy the rest file by file instead.
+                                    _token.ThrowIfCancellationRequested();
+                                    _log(Loc.T($"{app.Name} · {kind}: {FirstLine(ex.Message)} – kopiere die übrigen Dateien einzeln …",
+                                               $"{app.Name} · {kind}: {FirstLine(ex.Message)} – copying the remaining files one by one …"));
+                                    List<string> skipped = await PullTreeTolerantAsync(source, content);
+                                    foreach (string file in skipped)
+                                        record.Skipped.Add($"{kind}/{file}");
+                                    if (skipped.Count > 0)
+                                        _log(Loc.T($"{app.Name} · {kind}: {skipped.Count} Datei(en) ohne Leserechte übersprungen: {string.Join(", ", skipped.Take(5))}{(skipped.Count > 5 ? " …" : "")}",
+                                                   $"{app.Name} · {kind}: skipped {skipped.Count} file(s) without read permission: {string.Join(", ", skipped.Take(5))}{(skipped.Count > 5 ? " …" : "")}"));
+                                }
                             }
 
                             string payload = kind == "APK" ? staging : Path.Combine(staging, "content");
@@ -649,6 +734,8 @@ internal sealed class BackupService
                 {
                     json["completed"] = new JsonArray(record.Completed.Select(c => (JsonNode?)c).ToArray());
                     json["errors"] = new JsonArray(record.Errors.Select(c => (JsonNode?)c).ToArray());
+                    if (record.Skipped.Count > 0)
+                        json["skipped_unreadable"] = new JsonArray(record.Skipped.Select(c => (JsonNode?)c).ToArray());
                     json["files"] = files;
                     try
                     {
