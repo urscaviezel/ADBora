@@ -37,7 +37,7 @@ internal sealed class MainForm : Form
         _state = new AppState(AppSettings.Load());
         Loc.SetLanguage(_state.Settings.Language);
 
-        Text = $"ADBora {AppInfo.Version}";
+        Text = $"ADBora {AppInfo.DisplayVersion}";
         try
         {
             if (Icon.ExtractAssociatedIcon(Application.ExecutablePath) is { } icon)

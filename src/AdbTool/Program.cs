@@ -9,6 +9,13 @@ internal static class AppInfo
 {
     public static string Version =>
         Assembly.GetExecutingAssembly().GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.0.0";
+
+    /// <summary>Version for display, e.g. "1.3.0 (Test)" for test builds.</summary>
+    public static string DisplayVersion =>
+        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion is { } info &&
+        info.Contains("-test", StringComparison.OrdinalIgnoreCase)
+            ? Version + " (Test)"
+            : Version;
 }
 
 internal static class Program

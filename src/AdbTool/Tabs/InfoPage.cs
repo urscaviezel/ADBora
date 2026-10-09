@@ -199,7 +199,7 @@ internal sealed class InfoPage : UserControl, IPage
 
     private void Reload(bool refreshAdb)
     {
-        _version.Text = AppInfo.Version + (Updater.PretendVersion is { } p ? $"  (Test: {p})" : "");
+        _version.Text = AppInfo.DisplayVersion + (Updater.PretendVersion is { } p ? $"  (Test: {p})" : "");
         _build.Text = Updater.BuildDate;
         _variant.Text = Updater.KindText;
         _dotnet.Text = RuntimeInformation.FrameworkDescription;

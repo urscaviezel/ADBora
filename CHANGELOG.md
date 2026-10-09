@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.0 – 2026-10-09
+
+- DE: Tab „ADB Commands“: **Befehle für dieses Gerät** – ADBora erkennt das aktive Gerät
+  (Meta Quest, Pico, Android) und bietet passende Befehle mit Beschreibung an; riskante
+  Befehle werden markiert und vor dem Ausführen bestätigt. **Entdecken …** liest Apps,
+  Systemwerte, Einstellungen und Systemdienste live vom Gerät und erzeugt daraus Befehle.
+  Eigene Befehle lassen sich einem Gerätemodell zuordnen.
+- EN: "ADB commands" tab: **Commands for this device** – ADBora detects the active device
+  (Meta Quest, Pico, Android) and offers matching commands with descriptions; risky commands
+  are marked and confirmed before running. **Explore …** reads apps, system properties,
+  settings and services live from the device and builds commands from them. Own commands
+  can be assigned to a device model.
+
 ## v1.2.1 – 2026-10-02
 
 - DE: Daten-/OBB-Backup bricht nicht mehr ab, wenn einzelne Dateien für ADB nicht lesbar sind

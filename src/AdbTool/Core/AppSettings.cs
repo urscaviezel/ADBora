@@ -8,6 +8,8 @@ internal sealed class SavedCommand
 {
     public string Name { get; set; } = "";
     public string Command { get; set; } = "";
+    /// <summary>Device model this command belongs to; empty = all devices.</summary>
+    public string Model { get; set; } = "";
 }
 
 internal sealed class AppSettings

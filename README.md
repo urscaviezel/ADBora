@@ -35,7 +35,7 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
 | **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
-| **5 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓) und eigenen gespeicherten Befehlen |
+| **5 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
 | **6 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
 
 Das **aktive Gerät** wird oben rechts gewählt und gilt für alle Tabs (mehrere
@@ -133,7 +133,16 @@ ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
   die Geräte-Shell (Pipes/Anführungszeichen, z. B. `shell dumpsys battery | grep level`).
 - „An aktives Gerät senden (-s)“ ergänzt `-s <Seriennummer>` (nicht bei `devices`, `version`, `connect` …).
 - Dauerläufer wie `logcat` mit **Stopp** beenden.
-- Eigene Befehle: eingeben → **Aktuellen Befehl speichern …** → Name vergeben.
+- Eigene Befehle: eingeben → **Aktuellen Befehl speichern …** → Name vergeben; optional
+  „Nur für dieses Gerätemodell anzeigen“.
+- **Befehle für dieses Gerät:** ADBora erkennt Hersteller und Modell des aktiven Geräts und
+  bietet passende Befehle mit Beschreibung an – allgemeine Android-Befehle (Geräteinfo, Apps,
+  Eingabe, Diagnose, System) und bei einer Meta Quest zusätzlich z. B. Bildwiederholrate,
+  Texturgrösse, CPU-/GPU-Level, Näherungssensor, Guardian. Riskante Befehle sind markiert
+  (! / ⚠) und werden vor dem Ausführen bestätigt; Platzhalter wie `<paket>` müssen ersetzt werden.
+- **Entdecken …:** liest Apps, Systemwerte (getprop), Einstellungen (settings) und
+  Systemdienste (cmd) live vom Gerät, durchsuchbar; daraus entstehen per Klick Befehle
+  (App starten/beenden, Wert lesen/setzen, Dienst-Hilfe …).
 
 ### Build
 
@@ -186,7 +195,7 @@ backups are never deleted. The current data location is shown in
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
 | **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
-| **5 · ADB commands** | ADB commands with live output, stop, history (↑/↓) and your own saved commands |
+| **5 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
 | **6 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
 
 The **active device** is selected at the top right and applies to all tabs
@@ -270,7 +279,16 @@ path, not the theoretical bus speed.
   unchanged to the device shell (pipes/quotes, e.g. `shell dumpsys battery | grep level`).
 - "Send to active device (-s)" adds `-s <serial>` (not for `devices`, `version`, `connect` …).
 - Stop long-running commands such as `logcat` with **Stop**.
-- Own commands: type → **Save current command …** → enter a name.
+- Own commands: type → **Save current command …** → enter a name; optionally
+  "Show only for this device model".
+- **Commands for this device:** ADBora detects manufacturer and model of the active device
+  and offers matching commands with descriptions – general Android commands (device info,
+  apps, input, diagnostics, system) and on a Meta Quest additionally e.g. refresh rate,
+  texture size, CPU/GPU level, proximity sensor, Guardian. Risky commands are marked (! / ⚠)
+  and confirmed before running; placeholders like `<paket>` must be replaced.
+- **Explore …:** reads apps, system properties (getprop), settings and system services (cmd)
+  live from the device, searchable; one click builds commands from them (start/stop app,
+  read/set value, service help …).
 
 ### Build
 

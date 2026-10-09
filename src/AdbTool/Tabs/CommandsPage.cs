@@ -27,6 +27,18 @@ internal sealed class CommandsPage : UserControl, IPage
     private readonly DarkButton _savedAdd = Ui.Button("Aktuellen Befehl speichern …", "Save current command …");
     private readonly DarkButton _savedDelete = Ui.Button("Löschen", "Delete");
 
+    private readonly DarkComboBox _presets = Ui.Combo(420);
+    private readonly Label _detected = Ui.Value("");
+    private readonly Label _presetInfo = Ui.Value("");
+    private readonly DarkButton _presetLoad = Ui.Button("Übernehmen", "Load");
+    private readonly DarkButton _presetRun = Ui.Button("Ausführen", "Run");
+    private readonly DarkButton _presetSave = Ui.Button("Zu eigenen Befehlen …", "Add to own commands …");
+    private readonly DarkButton _explore = Ui.Button("Entdecken …", "Explore …");
+    private readonly Dictionary<string, DeviceProfile> _profiles = new();
+    private DeviceProfile? _profile;
+    private string? _riskCommand;
+    private CommandRisk _risk;
+
     private readonly TextBox _input = Ui.TextBox(600);
     private readonly CheckBox _targetDevice = Ui.CheckBox("An aktives Gerät senden (-s)", "Send to active device (-s)");
     private readonly DarkButton _run = Ui.Button("Ausführen  ⏎", "Run  ⏎", ButtonKind.Primary);
@@ -57,8 +69,11 @@ internal sealed class CommandsPage : UserControl, IPage
         _flush.Start();
         _state.BusyChanged += UpdateEnabled;
         _state.SelectedDeviceChanged += UpdateEnabled;
+        _state.SelectedDeviceChanged += () => _ = RefreshProfileAsync();
         _state.AdbChanged += UpdateEnabled;
         Loc.LanguageChanged += UpdateEnabled;
+        Loc.LanguageChanged += () => { ReloadPresets(); ReloadSaved(); };
+        ReloadPresets();
         UpdateEnabled();
     }
 
@@ -81,6 +96,45 @@ internal sealed class CommandsPage : UserControl, IPage
         savedBox.Controls.Add(_saved, 0, 0);
         savedBox.Controls.Add(savedButtons, 0, 1);
         savedCard.SetContent(savedBox);
+
+        // Device commands ---------------------------------------------------------
+        var presetCard = new Card("Befehle für dieses Gerät", "Commands for this device") { Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 0, 10, 0) };
+        var presetBox = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, BackColor = Color.Transparent, Dock = DockStyle.Top };
+        presetBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _detected.ForeColor = Theme.Muted;
+        _detected.Margin = new Padding(0, 0, 0, 6);
+        Ui.WrapTo(_detected, presetCard);
+        _presets.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _presets.Margin = new Padding(0, 0, 0, 6);
+        _presets.DropDownWidth = 700;
+        _presets.SelectionChangeCommitted += (_, _) => ShowPresetInfo();
+        _presetInfo.Margin = new Padding(0, 0, 0, 8);
+        _presetInfo.MinimumSize = new Size(0, 40);
+        Ui.WrapTo(_presetInfo, presetCard);
+        _presetLoad.Click += (_, _) => LoadPreset();
+        _presetRun.Click += async (_, _) => { if (LoadPreset()) await RunAsync(); };
+        _presetSave.Click += (_, _) => { if (_presets.SelectedItem is PresetItem p) SaveCommand(p.Preset.Command, p.Preset.Name); };
+        _explore.Click += async (_, _) => await ExploreAsync();
+        presetBox.Controls.Add(_detected, 0, 0);
+        presetBox.Controls.Add(_presets, 0, 1);
+        presetBox.Controls.Add(_presetInfo, 0, 2);
+        presetBox.Controls.Add(Ui.Row(_presetLoad, _presetRun, _presetSave, _explore), 0, 3);
+        presetCard.SetContent(presetBox);
+
+        savedCard.Dock = DockStyle.None;
+        savedCard.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+        savedCard.Margin = new Padding(10, 0, 0, 0);
+        var topRow = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent };
+        topRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        topRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        topRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        topRow.Controls.Add(presetCard, 0, 0);
+        topRow.Controls.Add(savedCard, 1, 0);
+        Ui.Responsive(this, topRow, presetCard, savedCard, breakpoint: 1000, changed: narrow =>
+        {
+            presetCard.Margin = narrow ? new Padding(0, 0, 0, Theme.S(12)) : new Padding(0, 0, Theme.S(10), 0);
+            savedCard.Margin = narrow ? new Padding(0) : new Padding(Theme.S(10), 0, 0, 0);
+        });
 
         // Input -----------------------------------------------------------------
         var inputCard = new Card("Befehl", "Command") { Dock = DockStyle.Top };
@@ -152,7 +206,7 @@ internal sealed class CommandsPage : UserControl, IPage
         Controls.Add(Spacer());
         Controls.Add(inputCard);
         Controls.Add(Spacer());
-        Controls.Add(savedCard);
+        Controls.Add(topRow);
     }
 
     private static Panel Spacer() => new() { Dock = DockStyle.Top, Height = 12, BackColor = Color.Transparent };
@@ -163,14 +217,135 @@ internal sealed class CommandsPage : UserControl, IPage
 
     private sealed record SavedItem(SavedCommand Command)
     {
-        public override string ToString() => $"{Command.Name}   —   adb {Command.Command}";
+        public override string ToString() =>
+            $"{Command.Name}{(Command.Model.Length > 0 ? $"  [{Command.Model}]" : "")}   —   adb {Command.Command}";
+    }
+
+    private sealed record PresetItem(CommandPreset Preset)
+    {
+        public override string ToString() =>
+            $"{Preset.Category} · {Preset.Name}{(Preset.Risk == CommandRisk.Dangerous ? "  ⚠" : Preset.Risk == CommandRisk.Caution ? "  !" : "")}";
+    }
+
+    private string CurrentModel => _state.SelectedDevice?.Model ?? "";
+
+    // ------------------------------------------------------------------
+    // Device specific command packs
+    // ------------------------------------------------------------------
+
+    private async Task RefreshProfileAsync()
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        ReloadSaved();
+        if (device is null || !device.IsReady || !_state.HasAdb)
+        {
+            _profile = null;
+            ReloadPresets();
+            return;
+        }
+        if (!_profiles.TryGetValue(device.Serial, out DeviceProfile? profile))
+        {
+            try
+            {
+                var adb = new AdbClient(_state.AdbPath!, device.Serial);
+                AdbResult r = await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell",
+                    "getprop ro.product.manufacturer; getprop ro.product.brand; getprop ro.product.model; getprop ro.build.version.release");
+                string[] l = r.Output.Replace("\r", "").Split('\n');
+                string Get(int i) => i < l.Length ? l[i].Trim() : "";
+                profile = new DeviceProfile(device.Serial, Get(0), Get(1), Get(2), Get(3), DeviceProfile.Detect(Get(0), Get(1), Get(2)));
+                _profiles[device.Serial] = profile;
+            }
+            catch
+            {
+                profile = null;
+            }
+        }
+        if (_state.SelectedDevice?.Serial != device.Serial) return; // device changed meanwhile
+        _profile = profile;
+        ReloadPresets();
+    }
+
+    private void ReloadPresets()
+    {
+        string? previous = (_presets.SelectedItem as PresetItem)?.Preset.Command;
+        _presets.BeginUpdate();
+        _presets.Items.Clear();
+        foreach (CommandPreset p in CommandCatalog.For(_profile?.Family)
+                     .OrderBy(p => p.Family is null ? 1 : 0)
+                     .ThenBy(p => p.Category, StringComparer.CurrentCultureIgnoreCase))
+            _presets.Items.Add(new PresetItem(p));
+        _presets.EndUpdate();
+        int index = previous is null ? 0 : Math.Max(0, _presets.Items.Cast<PresetItem>().ToList().FindIndex(i => i.Preset.Command == previous));
+        if (_presets.Items.Count > 0) _presets.SelectedIndex = index;
+
+        _detected.Text = _profile is { } pr
+            ? Loc.T($"Erkannt: {pr.Manufacturer} {pr.Model} · Android {pr.Android} → Befehle für {pr.FamilyText}",
+                    $"Detected: {pr.Manufacturer} {pr.Model} · Android {pr.Android} → commands for {pr.FamilyText}")
+            : Loc.T("Kein bereites Gerät – allgemeine Android-Befehle.", "No ready device – general Android commands.");
+        ShowPresetInfo();
+    }
+
+    private void ShowPresetInfo()
+    {
+        if (_presets.SelectedItem is not PresetItem item)
+        {
+            _presetInfo.Text = "";
+            return;
+        }
+        CommandPreset p = item.Preset;
+        string risk = p.Risk switch
+        {
+            CommandRisk.Dangerous => Loc.T("⚠ Vorsicht: ", "⚠ Caution: "),
+            CommandRisk.Caution => Loc.T("! Hinweis: ", "! Note: "),
+            _ => ""
+        };
+        _presetInfo.Text = $"{risk}{p.Description}\nadb {p.Command}";
+        _presetInfo.ForeColor = p.Risk == CommandRisk.Dangerous ? Theme.Error : p.Risk == CommandRisk.Caution ? Theme.Warning : Theme.Muted;
+        UpdateEnabled();
+    }
+
+    /// <summary>Puts the selected preset into the input; false if it still needs a value (placeholder).</summary>
+    private bool LoadPreset()
+    {
+        if (_presets.SelectedItem is not PresetItem item) return false;
+        SetInput(item.Preset.Command, item.Preset.Risk);
+        return !item.Preset.NeedsInput;
+    }
+
+    private void SetInput(string command, CommandRisk risk)
+    {
+        _input.Text = command;
+        _riskCommand = risk == CommandRisk.Safe ? null : command;
+        _risk = risk;
+        int ph = command.IndexOf('<');
+        int end = ph >= 0 ? command.IndexOf('>', ph) : -1;
+        _input.Focus();
+        if (end > ph)
+            _input.Select(ph, end - ph + 1);
+        else
+            _input.SelectionStart = _input.TextLength;
+    }
+
+    private async Task ExploreAsync()
+    {
+        if (_state.SelectedDevice is not { IsReady: true } device || !_state.HasAdb) return;
+        CommandExplorer.Result? result = CommandExplorer.Show(FindForm(), _state, device);
+        await Task.Yield();
+        if (result is null) return;
+        if (result.Save)
+            SaveCommand(result.Command, "");
+        else
+            SetInput(result.Command, result.Risk);
     }
 
     private void ReloadSaved(string? select = null)
     {
         _saved.BeginUpdate();
         _saved.Items.Clear();
-        foreach (SavedCommand cmd in _state.Settings.SavedCommands.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
+        string model = CurrentModel;
+        foreach (SavedCommand cmd in _state.Settings.SavedCommands
+                     .Where(c => c.Model.Length == 0 || string.Equals(c.Model, model, StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
             _saved.Items.Add(new SavedItem(cmd));
         _saved.EndUpdate();
 
@@ -186,9 +361,7 @@ internal sealed class CommandsPage : UserControl, IPage
     {
         if (_saved.SelectedItem is SavedItem item)
         {
-            _input.Text = item.Command.Command;
-            _input.SelectionStart = _input.TextLength;
-            _input.Focus();
+            SetInput(item.Command.Command, CommandRisk.Safe);
         }
     }
 
@@ -200,9 +373,17 @@ internal sealed class CommandsPage : UserControl, IPage
             MessageBox.Show(FindForm(), Loc.T("Bitte zuerst einen Befehl eingeben.", "Please enter a command first."), "ADBora");
             return;
         }
-
         string suggestion = _saved.SelectedItem is SavedItem item && item.Command.Command == command ? item.Command.Name : "";
-        string? name = Prompt(Loc.T("Befehl speichern", "Save command"), Loc.T("Name für diesen Befehl:", "Name for this command:"), suggestion);
+        SaveCommand(command, suggestion);
+    }
+
+    private void SaveCommand(string command, string suggestion)
+    {
+        command = StripAdbPrefix(command.Trim());
+        if (command.Length == 0) return;
+        string model = CurrentModel;
+        string? name = Prompt(Loc.T("Befehl speichern", "Save command"), Loc.T("Name für diesen Befehl:", "Name for this command:"), suggestion,
+            model, out bool onlyModel);
         if (string.IsNullOrWhiteSpace(name))
             return;
         name = name.Trim();
@@ -214,10 +395,11 @@ internal sealed class CommandsPage : UserControl, IPage
                     "ADBora", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
             existing.Command = command;
+            existing.Model = onlyModel ? model : "";
         }
         else
         {
-            _state.Settings.SavedCommands.Add(new SavedCommand { Name = name, Command = command });
+            _state.Settings.SavedCommands.Add(new SavedCommand { Name = name, Command = command, Model = onlyModel ? model : "" });
         }
         _state.Settings.Save();
         ReloadSaved(name);
@@ -235,9 +417,9 @@ internal sealed class CommandsPage : UserControl, IPage
         ReloadSaved();
     }
 
-    private string? Prompt(string title, string label, string value)
+    private string? Prompt(string title, string label, string value, string model, out bool onlyModel)
     {
-        using Form dialog = Ui.Dialog(title, 520, 170);
+        using Form dialog = Ui.Dialog(title, 520, model.Length > 0 ? 210 : 170);
         dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
         dialog.Padding = new Padding(Theme.S(18));
         var text = new Label { Text = label, Dock = DockStyle.Top, Height = Theme.S(28) };
@@ -251,12 +433,18 @@ internal sealed class CommandsPage : UserControl, IPage
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
+        var modelOnly = Ui.CheckBox($"Nur für dieses Gerätemodell anzeigen ({model})", $"Show only for this device model ({model})");
+        modelOnly.Dock = DockStyle.Top;
+        modelOnly.Visible = model.Length > 0;
+        dialog.Controls.Add(modelOnly);
         dialog.Controls.Add(box);
         dialog.Controls.Add(text);
         dialog.Controls.Add(buttons);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
-        return Ui.ShowDialog(dialog, FindForm()) == DialogResult.OK ? box.Text : null;
+        bool accepted = Ui.ShowDialog(dialog, FindForm()) == DialogResult.OK;
+        onlyModel = model.Length > 0 && modelOnly.Checked;
+        return accepted ? box.Text : null;
     }
 
     // ------------------------------------------------------------------
@@ -265,6 +453,8 @@ internal sealed class CommandsPage : UserControl, IPage
 
     public void OnActivated()
     {
+        if (_state.SelectedDevice is { } d && (_profile is null || _profile.Serial != d.Serial))
+            _ = RefreshProfileAsync();
         UpdateEnabled();
         _input.Focus();
     }
@@ -285,6 +475,11 @@ internal sealed class CommandsPage : UserControl, IPage
         _savedLoad.Enabled = _savedDelete.Enabled = _saved.SelectedItem is not null;
         _stop.Enabled = running;
         _targetDevice.Enabled = !running;
+        bool ready = _state.HasAdb && _state.SelectedDevice is { IsReady: true };
+        bool hasPreset = _presets.SelectedItem is PresetItem;
+        _presetLoad.Enabled = _presetSave.Enabled = hasPreset;
+        _presetRun.Enabled = hasPreset && idle && ready && !((PresetItem)_presets.SelectedItem!).Preset.NeedsInput;
+        _explore.Enabled = idle && ready;
 
         if (!running)
         {
@@ -441,6 +636,24 @@ internal sealed class CommandsPage : UserControl, IPage
         string line = StripAdbPrefix(_input.Text.Trim());
         if (line.Length == 0 || _process is not null || !_state.HasAdb)
             return;
+
+        if (line.Contains('<') && line.Contains('>') && System.Text.RegularExpressions.Regex.IsMatch(line, @"<[^<>\s|]+>"))
+        {
+            Enqueue(Loc.T("Bitte zuerst den Platzhalter <…> im Befehl ersetzen.\n", "Please replace the placeholder <…> in the command first.\n"), Theme.Warning);
+            return;
+        }
+
+        if (_riskCommand is not null && line == StripAdbPrefix(_riskCommand) && _risk != CommandRisk.Safe)
+        {
+            string question = _risk == CommandRisk.Dangerous
+                ? Loc.T($"Dieser Befehl kann Daten löschen oder das Gerät in einen besonderen Modus versetzen:\n\nadb {line}\n\nWirklich ausführen?",
+                        $"This command can delete data or put the device into a special mode:\n\nadb {line}\n\nReally run it?")
+                : Loc.T($"Dieser Befehl ändert das Verhalten des Geräts:\n\nadb {line}\n\nAusführen?",
+                        $"This command changes the device behaviour:\n\nadb {line}\n\nRun it?");
+            if (MessageBox.Show(FindForm(), question, "ADBora", MessageBoxButtons.YesNo,
+                    _risk == CommandRisk.Dangerous ? MessageBoxIcon.Warning : MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+        }
 
         List<string>? args = BuildArguments(line, out string? error);
         if (args is null)
