@@ -20,6 +20,8 @@ internal static class AppInfo
 
 internal static class Program
 {
+    private static bool _smokeTest;
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -29,6 +31,7 @@ internal static class Program
         if (check >= 0 && check + 1 < args.Length)
             return CheckApk(args[check + 1]);
 
+        _smokeTest = args.Contains("--smoke-test");
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ReportCrash(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportCrash(e.ExceptionObject as Exception);
@@ -40,7 +43,14 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         Theme.InitScale();
-        Application.Run(new MainForm(args.Contains("--smoke-test")));
+        try
+        {
+            Application.Run(new MainForm(_smokeTest));
+        }
+        catch (Exception ex) when (_smokeTest)
+        {
+            ReportCrash(ex);
+        }
         return 0;
     }
 
@@ -73,6 +83,12 @@ internal static class Program
             Directory.CreateDirectory(AppSettings.DataDirectory);
             File.AppendAllText(Path.Combine(AppSettings.DataDirectory, "error.log"),
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
+            if (_smokeTest)
+            {
+                // Build check (BUILD.ps1): no dialog, fail with exit code 3
+                Console.Error.WriteLine(ex);
+                Environment.Exit(3);
+            }
             MessageBox.Show(ex?.Message ?? "Unknown error", "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch { }

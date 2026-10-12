@@ -28,6 +28,15 @@ dotnet publish $project -c Release -r win-x64 --self-contained true `
     -p:EnableCompressionInSingleFile=true -p:DebugType=None -o $publish
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
+# Start check: open the main window once with every tab as start tab (catches start-up crashes)
+$exe = Join-Path $publish "ADBora.exe"
+for ($tab = 0; $tab -lt 7; $tab++) {
+    $p = Start-Process $exe -ArgumentList "--smoke-test", "--start-tab", "$tab" -PassThru
+    if (-not $p.WaitForExit(30000)) { $p.Kill(); throw "Smoke test hangs (start tab $tab)" }
+    if ($p.ExitCode -ne 0) { throw "Smoke test failed (start tab $tab, exit code $($p.ExitCode)) - see error.log" }
+}
+Write-Host "Smoke test passed (all start tabs)." -ForegroundColor Green
+
 Copy-Item (Join-Path $root "README.md") $publish
 Copy-Item (Join-Path $root "LICENSE") $publish
 

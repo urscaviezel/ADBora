@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.1 – 2026-10-12
+
+- DE: Behebt den Absturz beim Start von 1.4.0 („Invoke oder BeginInvoke kann … erst aufgerufen
+  werden …“). Der Build prüft jetzt jeden Start-Tab automatisch, bevor ein Paket entsteht.
+- EN: Fixes the start-up crash of 1.4.0 ("Invoke or BeginInvoke cannot be called … until the
+  window handle has been created"). The build now checks every start tab automatically before
+  a package is created.
+
 ## v1.4.0 – 2026-10-12
 
 - DE: Neuer Tab **Stream (Beta, experimentell)**: Headset-Bild live auf dem PC (scrcpy, wird bei

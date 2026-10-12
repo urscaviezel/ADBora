@@ -135,7 +135,9 @@ internal sealed class CommandsPage : UserControl, IPage
             presetCard.Margin = narrow ? new Padding(0, 0, 0, Theme.S(12)) : new Padding(0, 0, Theme.S(10), 0);
             savedCard.Margin = narrow ? new Padding(0) : new Padding(Theme.S(10), 0, 0, 0);
             // Re-measure the card heights after the column width changed (avoids an empty gap)
-            BeginInvoke(new Action(() => { topRow.PerformLayout(); PerformLayout(); }));
+            // (only once the window exists – this also runs while the page is being built)
+            if (IsHandleCreated)
+                BeginInvoke(new Action(() => { topRow.PerformLayout(); PerformLayout(); }));
         });
 
         // Input -----------------------------------------------------------------

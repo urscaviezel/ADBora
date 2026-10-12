@@ -178,6 +178,10 @@ internal sealed class MainForm : Form
         Controls.Add(_tabs);
         Controls.Add(header);
 
+        int startTab = Array.IndexOf(Environment.GetCommandLineArgs(), "--start-tab");
+        if (startTab > 0 && startTab + 1 < Environment.GetCommandLineArgs().Length &&
+            int.TryParse(Environment.GetCommandLineArgs()[startTab + 1], out int forced))
+            _state.Settings.LastTab = forced; // smoke test of every start tab
         int last = Math.Clamp(_state.Settings.LastTab, 0, _pages.Count - 1);
         _pages[0].Visible = last == 0;
         _tabs.SelectedIndex = last;
@@ -403,7 +407,8 @@ internal sealed class MainForm : Form
             _state.Settings.WindowWidth = (int)(Width / Theme.Scale);
             _state.Settings.WindowHeight = (int)(Height / Theme.Scale);
         }
-        _state.Settings.Save();
+        if (!_smokeTest)
+            _state.Settings.Save();
 
         if (_state.Settings.StopAdbServerOnExit && _state.Adb is { } adb && !_smokeTest)
         {
