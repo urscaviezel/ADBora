@@ -35,8 +35,9 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
 | **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
-| **5 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
-| **6 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
+| **5 · Stream (Beta)** | *Experimentell:* Headset-Bild live auf dem PC über scrcpy (USB oder WLAN), Display-, Ausschnitt-, Drehungs- und Neigungswahl mit Voreinstellungen für Quest 3 und Play For Dream, Ton/Mikrofon, MP4-Aufnahme, Screenshot |
+| **6 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
+| **7 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
 
 Das **aktive Gerät** wird oben rechts gewählt und gilt für alle Tabs (mehrere
 Geräte werden unterstützt, ADB-Aufrufe laufen mit `-s <Seriennummer>`). Es läuft
@@ -127,6 +128,20 @@ PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc (Gerät) → /dev/null
 Es wird nichts auf dem Gerät gespeichert. Der Wert ist der Durchsatz dieses
 ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
 
+### Stream (Beta, experimentell)
+
+- Nutzt **scrcpy** (Open Source, Apache-2.0); wird beim ersten Mal per Knopfdruck von GitHub
+  geladen (`%LOCALAPPDATA%\ADBora\tools` bzw. `Data\tools`), keine App auf dem Headset nötig.
+- Das Bild ist das **rohe Headset-Display**: bei der Quest beide Augen nebeneinander und
+  schief eingebaut, bei der Play For Dream ein 2 × 2-Raster auf einem eigenen Display.
+  ADBora wählt passendes Display, Ausschnitt und Drehung automatisch; mit **Grösse,
+  Versatz und Neigung** lässt sich nachjustieren (wird pro Gerätemodell gemerkt).
+  Ein entzerrtes Breitbild wie beim offiziellen Casting ist so nicht möglich.
+- Ton des Headsets oder Mikrofon, Steuerung per Maus/Tastatur (optional), Aufnahme als MP4
+  (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
+- Während des Streams: Näherungssensor aus (Quest) bzw. Display-Timeout 1 Stunde (andere
+  Geräte); der alte Wert wird danach wiederhergestellt.
+
 ### ADB Commands
 
 - Präfix `adb` ist optional. Bei `shell …` geht der Rest der Zeile unverändert an
@@ -195,8 +210,9 @@ backups are never deleted. The current data location is shown in
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
 | **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
-| **5 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
-| **6 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
+| **5 · Stream (beta)** | *Experimental:* headset view live on the PC via scrcpy (USB or Wi-Fi), display, view, rotation and tilt settings with presets for Quest 3 and Play For Dream, audio/microphone, MP4 recording, screenshot |
+| **6 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
+| **7 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
 
 The **active device** is selected at the top right and applies to all tabs
 (several devices supported, ADB calls use `-s <serial>`). Only one ADB operation
@@ -272,6 +288,19 @@ PC TCP sender → adb reverse → USB/Wi-Fi → toybox nc (device) → /dev/null
 
 Nothing is written to the device. The value is the throughput of this ADB/TCP
 path, not the theoretical bus speed.
+
+### Stream (beta, experimental)
+
+- Uses **scrcpy** (open source, Apache-2.0); downloaded from GitHub with one click the first
+  time (`%LOCALAPPDATA%\ADBora\tools` or `Data\tools`), no app needed on the headset.
+- The picture is the **raw headset display**: on the Quest both eyes side by side and mounted
+  tilted, on the Play For Dream a 2 × 2 grid on a separate display. ADBora picks display,
+  view and rotation automatically; **size, offset and tilt** fine-tune it (remembered per
+  device model). An undistorted wide picture like official casting is not possible this way.
+- Headset audio or microphone, optional mouse/keyboard control, MP4 recording
+  (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
+- While streaming: proximity sensor off (Quest) or display timeout 1 hour (other devices);
+  the previous value is restored afterwards.
 
 ### ADB commands
 

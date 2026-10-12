@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.4.0 – 2026-10-12
+
+- DE: Neuer Tab **Stream (Beta, experimentell)**: Headset-Bild live auf dem PC (scrcpy, wird bei
+  Bedarf von GitHub geladen), Display-Auswahl, Ausschnitt (ganzes Bild, ein Auge, Viertel),
+  Drehung und Feinabstimmung (Grösse, Versatz, Neigung) mit Voreinstellungen für Meta Quest 3
+  und Play For Dream, gemerkt pro Gerätemodell; Qualität/FPS, Ton bzw. Mikrofon des Headsets,
+  Aufnahme als MP4 (Videos\ADBora), Screenshot (Bilder\Screenshots); Näherungssensor aus
+  (Quest) bzw. Display-Timeout verlängern (andere Geräte) während des Streams.
+- EN: New **Stream (beta, experimental)** tab: headset view live on the PC (scrcpy, downloaded
+  from GitHub when needed), display selection, view (full, one eye, quarter), rotation and fine
+  tuning (size, offset, tilt) with presets for Meta Quest 3 and Play For Dream, remembered per
+  device model; quality/FPS, headset audio or microphone, MP4 recording (Videos\ADBora),
+  screenshot (Pictures\Screenshots); proximity sensor off (Quest) or longer display timeout
+  (other devices) while streaming.
+
 ## v1.3.0 – 2026-10-09
 
 - DE: Tab „ADB Commands“: **Befehle für dieses Gerät** – ADBora erkennt das aktive Gerät

@@ -6,3 +6,7 @@ _dev/
 *.user
 build/adb/*.exe
 build/adb/*.dll
+
+# local reference copy, not part of ADBora
+SideQuest/
+Logo_2.png

@@ -108,8 +108,8 @@ internal sealed class InfoPage : UserControl, IPage
         license.Margin = new Padding(0, 0, 0, 8);
         var thirdTitle = Key("Drittkomponenten", "Third-party components");
         var third = Ui.Label(
-            "– Android SDK Platform-Tools (adb) von Google – nicht enthalten, eigene Lizenzbedingungen\n– .NET 8 Runtime / Windows Forms / WPF von Microsoft (MIT-Lizenz)",
-            "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– .NET 8 runtime / Windows Forms / WPF by Microsoft (MIT license)");
+            "– Android SDK Platform-Tools (adb) von Google – nicht enthalten, eigene Lizenzbedingungen\n– scrcpy von Genymobile (Apache-2.0) – für den Stream, wird bei Bedarf separat geladen\n– .NET 8 Runtime / Windows Forms / WPF von Microsoft (MIT-Lizenz)",
+            "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– scrcpy by Genymobile (Apache-2.0) – for streaming, downloaded separately when needed\n– .NET 8 runtime / Windows Forms / WPF by Microsoft (MIT license)");
         third.Margin = new Padding(0, 0, 0, 4);
         Ui.WrapTo(third, this, 40);
         Ui.WrapTo(license, this, 40);

@@ -270,10 +270,14 @@ internal sealed class AdbClient
     }
 
     /// <summary>Streams a remote file binary-safe through "adb exec-out cat".</summary>
-    public async Task StreamFileAsync(string source, string target, CancellationToken token)
+    public Task StreamFileAsync(string source, string target, CancellationToken token) =>
+        ExecOutToFileAsync(ShellJoin(new[] { "cat", source }), target, token);
+
+    /// <summary>Runs "adb exec-out &lt;command&gt;" and writes the binary output to a file (e.g. screencap -p).</summary>
+    public async Task ExecOutToFileAsync(string command, string target, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        using Process p = Start("exec-out", ShellJoin(new[] { "cat", source }));
+        using Process p = Start("exec-out", command);
         Task<string> stderr = p.StandardError.ReadToEndAsync(CancellationToken.None);
 
         try

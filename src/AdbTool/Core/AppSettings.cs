@@ -4,6 +4,17 @@ using System.Text.Json.Nodes;
 
 namespace AdbTool.Core;
 
+internal sealed class StreamPreset
+{
+    public string Display { get; set; } = "";
+    public int View { get; set; }
+    public int Rotation { get; set; }
+    public int Zoom { get; set; } = 100;
+    public int OffsetX { get; set; }
+    public int OffsetY { get; set; }
+    public double Angle { get; set; }
+}
+
 internal sealed class SavedCommand
 {
     public string Name { get; set; } = "";
@@ -34,6 +45,23 @@ internal sealed class AppSettings
     public string BackupDestination { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "APK-Backups");
     public bool BackupSplitsAsApks { get; set; } = true;
+
+    // Stream (scrcpy): last view settings per device model
+    public Dictionary<string, StreamPreset> StreamPresets { get; set; } = new();
+
+    // Stream (scrcpy)
+    public string ScrcpyPath { get; set; } = "";
+    public int StreamView { get; set; } = -1; // -1 = automatic (one eye on VR displays)
+    public int StreamQuality { get; set; } = 1;
+    public int StreamFps { get; set; } = 1;
+    public int StreamAudio { get; set; }
+    public bool StreamControl { get; set; }
+    public bool StreamOnTop { get; set; }
+    public bool StreamRecord { get; set; }
+    public string StreamFolder { get; set; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "ADBora");
+    public string ScreenshotFolder { get; set; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
 
     // Speed test
     public int SpeedPort { get; set; } = 5001;

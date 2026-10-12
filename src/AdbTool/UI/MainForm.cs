@@ -155,6 +155,7 @@ internal sealed class MainForm : Form
         _tabs.AddTab("\uE74E", "APK Backup", "APK backup");
         _tabs.AddTab("\uE896", "APK Install", "APK install");
         _tabs.AddTab("\uEC4A", "Speedtest", "Speed test");
+        _tabs.AddTab("\uE714", "Stream (Beta)", "Stream (beta)");
         _tabs.AddTab("\uE756", "ADB Commands", "ADB commands");
         _tabs.AddTab("\uE946", "Build Info", "Build info");
         _tabs.SelectedIndexChanged += ShowPage;
@@ -163,6 +164,7 @@ internal sealed class MainForm : Form
         _pages.Add(new BackupPage(_state));
         _pages.Add(new InstallPage(_state));
         _pages.Add(new SpeedTestPage(_state));
+        _pages.Add(new StreamPage(_state));
         _pages.Add(new CommandsPage(_state));
         _pages.Add(new InfoPage(_state, ExitForUpdate));
         foreach (Control page in _pages)
