@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.5.0 – 2026-10-17
+
+- DE: Neuer Tab **Performance**: Leistungswerte der XR-Runtime (Play For Dream: PerfStats /
+  CompositorMonitor, Meta Quest: VrApi) und des Systems (CPU-/GPU-Last, Takt, Temperaturen,
+  Akku, RAM, Thermik) in Echtzeit per ADB – ohne App auf dem Headset; Kacheln, Verlauf
+  (bis 6 Werte), „Werte auswählen …“ (anzeigen / Graph pro Wert, zeigt, welche Werte das Gerät
+  liefert; kleine Vorauswahl), Akku-Strom und Leistungsaufnahme in W (Play For Dream, über
+  PFD-Metrics; nur im Standalone-Betrieb korrekt, über USB verfälscht das Laden die Werte),
+  CSV-Protokoll (Dokumente\ADBora\Metrics), HUD von PFD-Metrics bzw. OVR Metrics Tool im
+  Headset ein-/ausschalten; fehlt die HUD-App, installiert ADBora PFD-Metrics direkt von
+  GitHub auf das Play For Dream bzw. öffnet für die Quest das OVR Metrics Tool im Meta Store.
+- EN: New **Performance** tab: XR runtime values (Play For Dream: PerfStats / CompositorMonitor,
+  Meta Quest: VrApi) and system values (CPU/GPU load, clocks, temperatures, battery, RAM,
+  thermal) in real time via ADB – no app needed on the headset; tiles, history (up to 6 values),
+  "Select values …" (show / graph per value, shows which values the device delivers; small
+  default selection), battery current and power draw in W (Play For Dream, via PFD-Metrics; only correct standalone,
+  charging over USB distorts them), CSV log (Documents\ADBora\Metrics),
+  switch the PFD-Metrics / OVR Metrics Tool HUD on the headset; if the HUD app is missing, ADBora
+  installs PFD-Metrics straight from GitHub onto the Play For Dream or opens the OVR Metrics Tool
+  in the Meta Store for the Quest.
+
 ## v1.4.1 – 2026-10-12
 
 - DE: Behebt den Absturz beim Start von 1.4.0 („Invoke oder BeginInvoke kann … erst aufgerufen

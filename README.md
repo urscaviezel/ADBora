@@ -36,8 +36,9 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
 | **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
 | **5 · Stream (Beta)** | *Experimentell:* Headset-Bild live auf dem PC über scrcpy (USB oder WLAN), Display-, Ausschnitt-, Drehungs- und Neigungswahl mit Voreinstellungen für Quest 3 und Play For Dream, Ton/Mikrofon, MP4-Aufnahme, Screenshot |
-| **6 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
-| **7 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
+| **6 · Performance** | Leistungswerte live per ADB (FPS, Frame-Zeiten, CPU-/GPU-Last, Takt, Temperaturen, Akku, RAM …) für Play For Dream und Meta Quest, Auswahl der Werte und Graphen, CSV-Protokoll, HUD-App im Headset ein-/ausschalten bzw. installieren |
+| **7 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
+| **8 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
 
 Das **aktive Gerät** wird oben rechts gewählt und gilt für alle Tabs (mehrere
 Geräte werden unterstützt, ADB-Aufrufe laufen mit `-s <Seriennummer>`). Es läuft
@@ -142,6 +143,23 @@ ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
 - Während des Streams: Näherungssensor aus (Quest) bzw. Display-Timeout 1 Stunde (andere
   Geräte); der alte Wert wird danach wiederhergestellt.
 
+### Performance
+
+- Liest die Werte der **XR-Runtime** aus dem Logcat (Play For Dream: `PerfStats` /
+  `CompositorMonitor`, Meta Quest: `VrApi`) und **Systemwerte** über eine kleine Shell-Schleife
+  (CPU-/GPU-Last und -Takt, Temperaturen, Akku, freier RAM, Thermik-Status) – ohne Root und
+  ohne App auf dem Headset. XR-Werte erscheinen, sobald eine VR-App läuft.
+- **Werte auswählen …**: pro Wert Kachel und/oder Graph (bis 6 Verläufe über 2 Minuten mit
+  Min/Ø/Max); die Spalte „Aktuell“ zeigt, was das Gerät liefert – nicht jedes Headset liefert
+  jeden Wert (die Quest z. B. keine Temperaturen). Auswahl wird gemerkt.
+- **CSV-Protokoll** nach `Dokumente\ADBora\Metrics` (eine Zeile pro Sekunde).
+- **HUD im Headset**: [PFD-Metrics](https://github.com/urscaviezel/PFD-Metrics) (Play For Dream)
+  bzw. OVR Metrics Tool (Quest) ein-/ausschalten. Fehlt die App, installiert ADBora PFD-Metrics
+  direkt aus dem GitHub-Release; für die Quest öffnet sich die Meta-Store-Seite des OVR Metrics Tool.
+- **Akku-Strom / Leistungsaufnahme (W)** beim Play For Dream kommen von PFD-Metrics (dort muss
+  die Messung laufen). Spannung, Strom und Leistung sind nur im **Standalone-Betrieb**
+  (WLAN-ADB) korrekt – über USB verfälscht das Laden die Werte. Die Quest liefert sie nicht.
+
 ### ADB Commands
 
 - Präfix `adb` ist optional. Bei `shell …` geht der Rest der Zeile unverändert an
@@ -211,8 +229,9 @@ backups are never deleted. The current data location is shown in
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
 | **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
 | **5 · Stream (beta)** | *Experimental:* headset view live on the PC via scrcpy (USB or Wi-Fi), display, view, rotation and tilt settings with presets for Quest 3 and Play For Dream, audio/microphone, MP4 recording, screenshot |
-| **6 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
-| **7 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
+| **6 · Performance** | Live performance values via ADB (FPS, frame times, CPU/GPU load, clocks, temperatures, battery, RAM …) for Play For Dream and Meta Quest, choice of values and graphs, CSV log, switch or install the HUD app on the headset |
+| **7 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
+| **8 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
 
 The **active device** is selected at the top right and applies to all tabs
 (several devices supported, ADB calls use `-s <serial>`). Only one ADB operation
@@ -301,6 +320,24 @@ path, not the theoretical bus speed.
   (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - While streaming: proximity sensor off (Quest) or display timeout 1 hour (other devices);
   the previous value is restored afterwards.
+
+### Performance
+
+- Reads the **XR runtime** values from logcat (Play For Dream: `PerfStats` /
+  `CompositorMonitor`, Meta Quest: `VrApi`) and **system values** via a small shell loop
+  (CPU/GPU load and clock, temperatures, battery, free RAM, thermal status) – no root and no
+  app on the headset. XR values appear as soon as a VR app is running.
+- **Select values …**: tile and/or graph per value (up to 6 histories over 2 minutes with
+  min/avg/max); the "Current" column shows what the device delivers – not every headset
+  delivers every value (the Quest e.g. no temperatures). The selection is remembered.
+- **CSV log** to `Documents\ADBora\Metrics` (one row per second).
+- **HUD on the headset**: switch [PFD-Metrics](https://github.com/urscaviezel/PFD-Metrics)
+  (Play For Dream) or OVR Metrics Tool (Quest) on/off. If the app is missing, ADBora installs
+  PFD-Metrics straight from the GitHub release; for the Quest the Meta Store page of the OVR
+  Metrics Tool opens.
+- **Battery current / power draw (W)** on the Play For Dream come from PFD-Metrics (its
+  monitoring must be running). Voltage, current and power are only correct in **standalone
+  use** (Wi-Fi ADB) – over USB, charging distorts them. The Quest does not deliver them.
 
 ### ADB commands
 

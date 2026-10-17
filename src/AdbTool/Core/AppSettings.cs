@@ -46,6 +46,15 @@ internal sealed class AppSettings
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "APK-Backups");
     public bool BackupSplitsAsApks { get; set; } = true;
 
+    // Performance monitoring
+    public bool MetricsCsv { get; set; }
+    /// <summary>Tiles shown in the Performance tab (null = defaults).</summary>
+    public List<string>? MetricsShown { get; set; }
+    /// <summary>Values with a graph (null = defaults).</summary>
+    public List<string>? MetricsGraphList { get; set; }
+    public string MetricsFolder { get; set; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ADBora", "Metrics");
+
     // Stream (scrcpy): last view settings per device model
     public Dictionary<string, StreamPreset> StreamPresets { get; set; } = new();
 
