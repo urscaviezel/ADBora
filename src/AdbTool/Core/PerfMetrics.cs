@@ -82,6 +82,16 @@ internal static class PerfMetrics
     };
     public static readonly string[] DefaultGraphs = { "average_frame_rate", "cpu_utilization_percentage", "gpu_utilization_percentage" };
 
+    /// <summary>Fields only the Meta Quest runtime (VrApi) logs – the Play For Dream runtime never delivers them.</summary>
+    public static readonly HashSet<string> QuestOnly = new()
+    {
+        "cpu_frequency_MHz", "gpu_frequency_MHz", "memory_frequency_MHz", "cpu_gpu_time_milliseconds", "tear_count", "layer_count"
+    };
+    /// <summary>Values that ADB cannot read on the Play For Dream; they come from a running PFD-Metrics (status.json).</summary>
+    public static readonly HashSet<string> PfdMetricsOnly = new() { "battery_current_now_amps", "power_wattage" };
+    /// <summary>Not readable on the Play For Dream at all (not even by PFD-Metrics) – hidden from the list there.</summary>
+    public static readonly HashSet<string> PfdUnavailable = new() { "system_gpu_frequency_MHz" };
+
     /// <summary>status.json of PFD-Metrics (written every ~5 s while its monitoring runs); has current/power from BatteryManager.</summary>
     public const string PfdStatusFile = "/sdcard/Android/data/com.pfd.metricstool.hud/files/status.json";
 
@@ -258,7 +268,7 @@ internal static class PerfMetrics
         "if [ $((i % 2)) -eq 0 ]; then echo \"@B $(dumpsys battery | grep -E '^ *(level|temperature|voltage):' | tr '\\n' ' ')\"; " +
         "echo \"@H $(dumpsys thermalservice | grep -m1 'Thermal Status')\"; fi; " +
         "if [ $((i % 3)) -eq 0 ]; then echo \"@A $(dumpsys activity activities | grep -m1 topResumedActivity)\"; " +
-        "echo \"@W now=$(date +%s) cur=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) $(grep -E '\\\"(time|battery_current_now_amps|power_wattage)\\\"' " + PfdStatusFile + " 2>/dev/null | tr -d ' \\\",' | tr '\\n' ' ')\"; fi; " +
+        "echo \"@W now=$(date +%s) cur=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) $(grep -E '\\\"(time|battery_current_now_amps|power_wattage|gpu_frequency_MHz)\\\"' " + PfdStatusFile + " 2>/dev/null | tr -d ' \\\",' | tr '\\n' ' ')\"; fi; " +
         "echo @E; i=$((i+1)); sleep 1; done";
 
     public const string ZoneTypesScript = "for t in /sys/class/thermal/thermal_zone*; do v=$(cat $t/type 2>/dev/null); echo \"${v:-x}\"; done";
@@ -377,6 +387,8 @@ internal static class PerfMetrics
                         double w = watt.Success ? Num(watt.Groups[1].Value) : double.NaN;
                         values["battery_current_now_amps"] = fresh ? Math.Abs(a) : double.NaN;
                         values["power_wattage"] = fresh ? w : double.NaN;
+                        Match gpu = Regex.Match(body, @"gpu_frequency_MHz:([\d.]+)");
+                        if (fresh && gpu.Success && !values.ContainsKey("system_gpu_frequency_MHz")) Put(values, "system_gpu_frequency_MHz", Num(gpu.Groups[1].Value));
                         PowerFromPfd = fresh && !double.IsNaN(w);
                     }
                     break;

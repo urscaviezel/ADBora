@@ -411,7 +411,7 @@ internal sealed class InstallPage : UserControl, IPage
             if (installed)
             {
                 foreach (var (folder, package) in obbs)
-                    await PushTreeAsync(adb, folder, $"/sdcard/Android/obb/{package}", "OBB", token);
+                    await PushTreeAsync(adb, folder, $"/sdcard/Android/obb/{package}", "OBB", token, viaStaging: true);
             }
             return installed;
         }
@@ -568,7 +568,7 @@ internal sealed class InstallPage : UserControl, IPage
                     if (item.Obb && item.ObbDir is not null)
                     {
                         SetStatus(Loc.T($"Kopiere OBB: {label} …", $"Copying OBB: {label} …"));
-                        await PushTreeAsync(adb, item.ObbDir, $"/sdcard/Android/obb/{item.Package}", "OBB", token);
+                        await PushTreeAsync(adb, item.ObbDir, $"/sdcard/Android/obb/{item.Package}", "OBB", token, viaStaging: true);
                         _progress.Value = ++step;
                     }
                     if (item.Data && item.DataDir is not null)
@@ -576,8 +576,11 @@ internal sealed class InstallPage : UserControl, IPage
                         SetStatus(Loc.T($"Kopiere Daten: {label} …", $"Copying data: {label} …"));
                         await adb.CaptureAsync(token, "shell", AdbClient.ShellJoin(new[] { "am", "force-stop", item.Package }));
                         await PushTreeAsync(adb, item.DataDir, $"/sdcard/Android/data/{item.Package}", Loc.T("Daten", "Data"), token, viaStaging: true);
-                        _progress.Value = ++step;
                     }
+                    if (item.Data && item.InternalTar is not null)
+                        await RestoreInternalAsync(adb, item.InternalTar, item.Package, token);
+                    if (item.Data && (item.DataDir is not null || item.InternalTar is not null))
+                        _progress.Value = ++step;
                 }
                 catch (AdbException ex)
                 {
@@ -614,6 +617,29 @@ internal sealed class InstallPage : UserControl, IPage
     }
 
     private const string StagingDir = "/data/local/tmp/adbora-restore";
+
+    /// <summary>Writes Internal/data.tar back into /data/data/&lt;package&gt; via run-as (debuggable apps only).</summary>
+    private async Task RestoreInternalAsync(AdbClient adb, string tar, string package, CancellationToken token)
+    {
+        const string remote = "/data/local/tmp/adbora-internal.tar";
+        SetStatus(Loc.T("Kopiere interne App-Daten …", "Copying internal app data …"));
+        Log(Loc.T($"   Intern → /data/data/{package} (run-as)", $"   Internal → /data/data/{package} (run-as)"));
+        try
+        {
+            int exit = await adb.RunStreamingAsync(new[] { "push", tar, remote }, (line, _) => { if (line.Trim().Length > 0) Log("   " + line.Trim()); }, token);
+            if (exit != 0)
+                throw new AdbException(Loc.T("Interne Daten: Kopieren fehlgeschlagen", "Internal data: copy failed"));
+            AdbResult r = await adb.CaptureAsync(token, TimeSpan.FromMinutes(30), "shell", AdbTool.Backup.BackupService.InternalRestoreCommand(package, remote));
+            if (!r.Output.Contains("ADBORA_OK"))
+                throw new AdbException(Loc.T($"Interne Daten konnten nicht zurückgeschrieben werden (App nicht debuggable?)\n{r.Combined}",
+                                             $"Internal data could not be restored (app not debuggable?)\n{r.Combined}"));
+            Log(Loc.T("✔ Interne App-Daten wiederhergestellt", "✔ Internal app data restored"));
+        }
+        finally
+        {
+            try { await adb.CaptureAsync(CancellationToken.None, "shell", "rm -f " + remote); } catch { }
+        }
+    }
 
     /// <summary>
     /// Copies the content of a local folder into a device folder. Each top-level
@@ -663,6 +689,8 @@ internal sealed class InstallPage : UserControl, IPage
                     $"cp -r {AdbClient.ShellQuote(StagingDir + "/.")} {AdbClient.ShellQuote(target + "/")} && echo ADBORA_OK");
                 if (!cp.Output.Contains("ADBORA_OK"))
                     throw new AdbException(Loc.T($"{kind}: Kopieren auf dem Gerät fehlgeschlagen:\n{cp.Combined}", $"{kind}: copy on the device failed:\n{cp.Combined}"));
+                // Restored files belong to the shell user – make them readable / writable for the app
+                await adb.CaptureAsync(token, TimeSpan.FromMinutes(10), "shell", AdbTool.Backup.BackupService.FixPermissionsCommand(target));
             }
         }
         finally

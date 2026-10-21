@@ -55,6 +55,7 @@ internal sealed class PerformancePage : UserControl, IPage
     private string? _csvFile;
     private string? _hudPackage;      // installed HUD app (PFD-Metrics HUD / OVR Metrics Tool)
     private string? _installKind;     // "pfd" / "quest" when the HUD app is missing
+    private string? _deviceKind;      // "pfd" / "quest" / null
     private bool _installing;
 
     public PerformancePage(AppState state)
@@ -382,7 +383,7 @@ internal sealed class PerformancePage : UserControl, IPage
 
     private void ChooseValues()
     {
-        if (!MetricSelectDialog.Show(FindForm(), _hidden, _graphs, MaxGraphs, _serial is null ? new Dictionary<string, double>() : _lastSnapshot)) return;
+        if (!MetricSelectDialog.Show(FindForm(), _hidden, _graphs, MaxGraphs, _serial is null ? new Dictionary<string, double>() : _lastSnapshot, _deviceKind, _hudPackage == PfdHud)) return;
         // Rebuild the tiles with the new selection
         Ui.Frozen(_tiles, () =>
         {
@@ -454,7 +455,7 @@ internal sealed class PerformancePage : UserControl, IPage
     private async Task DetectHudAsync()
     {
         AdbDevice? device = _state.SelectedDevice;
-        string? found = null, install = null;
+        string? found = null, install = null, kind = null;
         if (device is { IsReady: true } && _state.HasAdb)
         {
             try
@@ -468,12 +469,14 @@ internal sealed class PerformancePage : UserControl, IPage
                 bool pfd = o.Contains("Play For Dream", StringComparison.OrdinalIgnoreCase) || device.DisplayName.Contains("PFDM", StringComparison.OrdinalIgnoreCase);
                 bool quest = o.Contains("Oculus", StringComparison.OrdinalIgnoreCase) || device.DisplayName.Contains("Quest", StringComparison.OrdinalIgnoreCase);
                 if (found is null) install = pfd ? "pfd" : quest ? "quest" : null;
+                kind = pfd ? "pfd" : quest ? "quest" : null;
             }
             catch { }
         }
         if (IsDisposed) return;
         _hudPackage = found;
         _installKind = install;
+        _deviceKind = kind;
         UpdateEnabled();
     }
 
@@ -575,7 +578,8 @@ internal static class MetricSelectDialog
 {
     private const int ColName = 0, ColValue = 1, ColShow = 2, ColGraph = 3;
 
-    public static bool Show(IWin32Window? owner, HashSet<string> hidden, List<string> graphs, int maxGraphs, IReadOnlyDictionary<string, double> current)
+    public static bool Show(IWin32Window? owner, HashSet<string> hidden, List<string> graphs, int maxGraphs, IReadOnlyDictionary<string, double> current,
+                            string? deviceKind = null, bool pfdMetricsInstalled = false)
     {
         bool measuring = current.Count > 0;
         bool Has(string k) => current.TryGetValue(k, out double v) && !double.IsNaN(v);
@@ -583,7 +587,7 @@ internal static class MetricSelectDialog
         var graph = PerfMetrics.All.ToDictionary(m => m.Key, m => graphs.Contains(m.Key));
         var order = new List<string>(graphs);
 
-        using Form dialog = Ui.Dialog(Loc.T("Werte auswählen", "Choose values"), 720, 700);
+        using Form dialog = Ui.Dialog(Loc.T("Werte auswählen", "Choose values"), 780, 700);
         var info = new Label
         {
             Dock = DockStyle.Top, AutoSize = false, Height = Theme.S(78), ForeColor = Theme.Muted,
@@ -618,7 +622,7 @@ internal static class MetricSelectDialog
         Theme.UseDarkScrollBars(grid);
         typeof(DataGridView).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.SetValue(grid, true);
         grid.Columns.Add(new DataGridViewTextBoxColumn { AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, HeaderText = Loc.T("Wert", "Value") });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(110), HeaderText = Loc.T("Aktuell", "Current") });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(170), HeaderText = Loc.T("Aktuell", "Current") });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(90), HeaderText = Loc.T("Anzeigen", "Show") });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(90), HeaderText = "Graph" });
         foreach (DataGridViewColumn c in grid.Columns) c.SortMode = DataGridViewColumnSortMode.NotSortable;
@@ -632,7 +636,14 @@ internal static class MetricSelectDialog
         };
         foreach (PerfMetric m in PerfMetrics.All)
         {
-            string now = Has(m.Key) ? m.Format(current[m.Key]) + (m.Unit.Length > 0 ? " " + m.Unit : "") : (measuring ? "–" : "");
+            if (deviceKind == "pfd" && PerfMetrics.PfdUnavailable.Contains(m.Key) && !Has(m.Key)) continue;
+            string why = deviceKind switch
+            {
+                "pfd" when PerfMetrics.QuestOnly.Contains(m.Key) => Loc.T("nur Quest", "Quest only"),
+                "pfd" when PerfMetrics.PfdMetricsOnly.Contains(m.Key) => pfdMetricsInstalled ? Loc.T("– (PFD-Metrics-Messung?)", "– (PFD-Metrics running?)") : Loc.T("nur mit PFD-Metrics", "PFD-Metrics only"),
+                _ => "–"
+            };
+            string now = Has(m.Key) ? m.Format(current[m.Key]) + (m.Unit.Length > 0 ? " " + m.Unit : "") : (measuring || deviceKind == "pfd" && why != "–" ? why : "");
             int r = grid.Rows.Add($"{GroupText(m.Group)} · {m.Label}{(m.Unit.Length > 0 ? $" ({m.Unit})" : "")}", now, "", "");
             grid.Rows[r].Tag = m.Key;
             if (measuring && !Has(m.Key)) grid.Rows[r].DefaultCellStyle.ForeColor = Theme.Muted;
@@ -686,7 +697,7 @@ internal static class MetricSelectDialog
         var defaults = Ui.Button("Standard", "Defaults");
         ok.DialogResult = DialogResult.OK;
         cancel.DialogResult = DialogResult.Cancel;
-        all.Click += (_, _) => { foreach (string k in show.Keys.ToList()) show[k] = !measuring || Has(k); grid.Invalidate(); };
+        all.Click += (_, _) => { foreach (string k in show.Keys.ToList()) show[k] = measuring ? Has(k) : !(deviceKind == "pfd" && PerfMetrics.QuestOnly.Contains(k)); grid.Invalidate(); };
         defaults.Click += (_, _) =>
         {
             foreach (string k in show.Keys.ToList()) show[k] = PerfMetrics.DefaultShown.Contains(k);

@@ -18,6 +18,8 @@ internal sealed class RestoreEntry
     public List<string> Apks { get; } = new();
     public string? ObbDir { get; set; }
     public string? DataDir { get; set; }
+    /// <summary>Internal app data (Internal/data.tar, via run-as) – part of "Data".</summary>
+    public string? InternalTar { get; set; }
     public long ApkBytes { get; set; }
     public long ObbBytes { get; set; }
     public long DataBytes { get; set; }
@@ -28,7 +30,7 @@ internal sealed class RestoreEntry
 
     public bool HasApk => Apks.Count > 0;
     public bool HasObb => ObbDir is not null;
-    public bool HasData => DataDir is not null;
+    public bool HasData => DataDir is not null || InternalTar is not null;
     public bool AnySelected => Apk || Obb || Data;
     public long SelectedBytes => (Apk ? ApkBytes : 0) + (Obb ? ObbBytes : 0) + (Data ? DataBytes : 0);
 }
@@ -149,6 +151,12 @@ internal static class BackupScanner
 
         (entry.ObbDir, entry.ObbBytes) = Payload(Path.Combine(folder, "OBB"));
         (entry.DataDir, entry.DataBytes) = Payload(Path.Combine(folder, "Data"));
+        string internalTar = Path.Combine(folder, "Internal", AdbTool.Backup.BackupService.InternalTarName);
+        if (File.Exists(internalTar))
+        {
+            entry.InternalTar = internalTar;
+            entry.DataBytes += new FileInfo(internalTar).Length;
+        }
 
         entry.Apk = entry.HasApk;
         entry.Obb = entry.HasObb;

@@ -34,6 +34,8 @@ internal sealed class AppEntry
     public List<string> Apks { get; set; } = new();
     public FolderState Obb { get; set; } = FolderState.Unchecked;
     public FolderState Data { get; set; } = FolderState.Unchecked;
+    /// <summary>App is debuggable: "run-as" reaches its internal data (/data/data/&lt;package&gt;, e.g. save games).</summary>
+    public bool Debuggable { get; set; }
     public string Note { get; set; } = "";
     public string Version { get; set; } = "";
     public string VersionCode { get; set; } = "";
@@ -46,7 +48,9 @@ internal sealed record BackupSelection(AppEntry App, bool Apk, bool Obb, bool Da
     {
         if (Apk) yield return "APK";
         if (Obb) yield return "OBB";
-        if (Data) yield return "Data";
+        // "Data" = Android/data folder and – for debuggable apps – the internal app data (via run-as)
+        if (Data && App.Data == FolderState.Present) yield return "Data";
+        if (Data && App.Debuggable) yield return "Internal";
     }
 }
 
@@ -143,6 +147,13 @@ internal sealed class BackupService
                         .Select(l => l[8..]).ToList();
                     app.Obb = await DirectoryStatusAsync($"/sdcard/Android/obb/{package}", parentCache);
                     app.Data = await DirectoryStatusAsync($"/sdcard/Android/data/{package}", parentCache);
+                    try
+                    {
+                        AdbResult runAs = await _adb.CaptureAsync(_token, TimeSpan.FromSeconds(10), "shell",
+                            AdbClient.ShellJoin(new[] { "run-as", package, "echo", "ADBORA_RUNAS" }));
+                        app.Debuggable = runAs.Output.Contains("ADBORA_RUNAS");
+                    }
+                    catch (AdbException) { }
 
                     if (resolveNames && app.Apks.Count > 0)
                     {
@@ -388,15 +399,47 @@ internal sealed class BackupService
         return result;
     }
 
-    /// <summary>Keeps raw APKs (and their signatures); never unpacks or merges splits.</summary>
-    public static List<string> ApkFileNames(AppEntry app)
+    /// <summary>Short device tag for file and folder names, e.g. "PFDM MR" → "PFDMR", "Quest 3" → "Quest3".</summary>
+    public static string DeviceTag(string? model)
+    {
+        string m = model ?? "";
+        if (m.Contains("PFDM", StringComparison.OrdinalIgnoreCase) || m.Contains("Play For Dream", StringComparison.OrdinalIgnoreCase)) return "PFDMR";
+        var sb = new StringBuilder();
+        foreach (char c in m) if (char.IsAsciiLetterOrDigit(c)) sb.Append(c);
+        string tag = sb.ToString();
+        return tag.Length > 20 ? tag[..20] : tag;
+    }
+
+    private static string Tagged(string stem, string tag) => tag.Length > 0 ? stem + "_" + tag : stem;
+
+    /// <summary>File name of the internal app data archive inside "Internal/".</summary>
+    public const string InternalTarName = "data.tar";
+
+    /// <summary>tar of /data/data/&lt;package&gt; via run-as (without caches and native libraries).</summary>
+    public static string InternalBackupCommand(string package) =>
+        $"run-as {package} tar -cf - -C /data/data/{package} --exclude=./cache --exclude=./code_cache --exclude=./lib .";
+
+    /// <summary>
+    /// Files copied by the adb shell into Android/data or Android/obb belong to the shell user (mode 660), so a
+    /// freshly installed app cannot read or overwrite its restored save games / settings. The shell cannot chown,
+    /// so it opens the permissions of everything it owns there instead.
+    /// </summary>
+    public static string FixPermissionsCommand(string dir) =>
+        $"find '{dir}' -user 2000 -type d -exec chmod 777 {{}} + ; find '{dir}' -user 2000 -type f -exec chmod 666 {{}} +";
+
+    /// <summary>Shell command that unpacks a pushed archive into the app's internal data (app must be stopped).</summary>
+    public static string InternalRestoreCommand(string package, string remoteTar) =>
+        $"am force-stop {package}; cat {remoteTar} | run-as {package} tar -xf - -C /data/data/{package} && echo ADBORA_OK";
+
+    /// <summary>Keeps raw APKs (and their signatures); never unpacks or merges splits. <paramref name="tag"/> = device tag (may be empty).</summary>
+    public static List<string> ApkFileNames(AppEntry app, string tag = "")
     {
         if (app.Apks.Count == 1)
         {
             string stem = SafeName(app.Name, 65);
             if (app.Version.Length > 0)
                 stem += "-" + SafeName(app.Version, 24);
-            return new List<string> { stem + ".apk" };
+            return new List<string> { Tagged(stem, tag) + ".apk" };
         }
 
         var names = new List<string>();
@@ -410,7 +453,7 @@ internal sealed class BackupService
                 string prefix = SafeName(app.Name, 45) + "-" + SafeName(app.Version, 20);
                 stem = stem == "base" ? prefix : prefix + "-" + SafeName(stem, 45);
             }
-            string name = SafeName(stem, 115) + ".apk";
+            string name = Tagged(SafeName(stem, 115), tag) + ".apk";
             while (used.Contains(name))
                 name = $"{index:00}_" + name;
             used.Add(name);
@@ -517,18 +560,18 @@ internal sealed class BackupService
             "The APK files are unchanged copies from the device, including their signatures.\n" +
             "For split apps, base and all splits belong together – never install them individually.\n\n" +
             manualEn + "\n" +
-            "DE: OBB/Data werden nur von ADBora (Batch-Restore) wiederhergestellt, nicht von INSTALL.cmd.\n" +
-            "EN: OBB/Data are restored by ADBora (batch restore) only, not by INSTALL.cmd.\n";
+            "DE: INSTALL.cmd stellt nach der APK auch die Ordner OBB und Data wieder her, sofern sie im Backup sind.\n" +
+            "EN: After the APK, INSTALL.cmd also restores the OBB and Data folders if they are in the backup.\n";
     }
 
     /// <summary>INSTALL.cmd: double-click installer for the app (single, split or .apks bundle).</summary>
-    public static string InstallScript(List<string> fileNames, List<string> bundleEntries, string adbPath)
+    public static string InstallScript(List<string> fileNames, List<string> bundleEntries, string adbPath, string package = "")
     {
         static string Cmd(string value) => value.Replace("%", "%%");
         var sb = new StringBuilder();
         sb.Append("@echo off\r\n");
         sb.Append("chcp 65001 >nul\r\n");
-        sb.Append("rem ADBora - installs this app on the connected device. Usage: INSTALL.cmd [serial]\r\n");
+        sb.Append("rem ADBora - installs this app (APK, then OBB and Data if present) on the connected device. Usage: INSTALL.cmd [serial]\r\n");
         sb.Append("cd /d \"%~dp0\"\r\n");
         sb.Append("set \"ADB=adb\"\r\n");
         sb.Append($"where adb >nul 2>nul || set \"ADB={Cmd(adbPath)}\"\r\n");
@@ -552,7 +595,40 @@ internal sealed class BackupService
             sb.Append($"\"%ADB%\" %SERIAL% {verb} -r " + string.Join(" ", fileNames.Select(n => $"\"APK\\{Cmd(n)}\"")) + "\r\n");
             sb.Append("if errorlevel 1 goto failed\r\n");
         }
-        sb.Append("echo.\r\necho OK\r\npause\r\nexit /b 0\r\n");
+        sb.Append("echo APK OK\r\n");
+        if (package.Length > 0)
+        {
+            // OBB and Data: push every top-level entry to a staging folder in /data/local/tmp and copy it with the
+            // shell – newer Android refuses "adb push" into Android/data and sub folders in Android/obb.
+            sb.Append($"set \"PKG={Cmd(package)}\"\r\n");
+            sb.Append("set \"ST=/data/local/tmp/adbora-restore\"\r\n");
+            sb.Append("if not exist \"OBB\\\" goto data\r\n");
+            sb.Append("call :restore OBB obb\r\nif errorlevel 1 goto failed\r\n");
+            sb.Append(":data\r\n");
+            sb.Append("if not exist \"Data\\\" goto internal\r\n");
+            sb.Append("call :restore Data data\r\nif errorlevel 1 goto failed\r\n");
+            sb.Append(":internal\r\n");
+            sb.Append($"if not exist \"Internal\\{InternalTarName}\" goto done\r\n");
+            sb.Append("echo.\r\necho Internal -^> /data/data/%PKG% (run-as) ...\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% push \"Internal\\" + InternalTarName + "\" /data/local/tmp/adbora-internal.tar || goto internalfailed\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% shell \"" + InternalRestoreCommand("%PKG%", "/data/local/tmp/adbora-internal.tar") + "\" | findstr /c:\"ADBORA_OK\" >nul || goto internalfailed\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% shell rm -f /data/local/tmp/adbora-internal.tar\r\n");
+            sb.Append("echo Internal OK\r\n");
+            sb.Append("goto done\r\n");
+            sb.Append(":internalfailed\r\n\"%ADB%\" %SERIAL% shell rm -f /data/local/tmp/adbora-internal.tar >nul 2>nul\r\n");
+            sb.Append("echo Interne Daten konnten nicht zurueckgeschrieben werden (App nicht debuggable?) / internal data could not be restored (app not debuggable?)\r\n");
+            sb.Append("goto failed\r\n");
+            sb.Append(":restore\r\n");
+            sb.Append("echo.\r\necho %1 -^> /sdcard/Android/%2/%PKG% ...\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% shell rm -rf %ST% ^&^& mkdir -p %ST%\r\n");
+            sb.Append("for /d %%D in (\"%1\\*\") do \"%ADB%\" %SERIAL% push \"%%~fD\" \"%ST%/\" || goto restorefail\r\n");
+            sb.Append("for %%F in (\"%1\\*\") do \"%ADB%\" %SERIAL% push \"%%~fF\" \"%ST%/\" || goto restorefail\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% shell \"mkdir -p '/sdcard/Android/%2/%PKG%' && cp -r %ST%/. '/sdcard/Android/%2/%PKG%/' && (" + FixPermissionsCommand("/sdcard/Android/%2/%PKG%") + " ; echo ADBORA_OK)\" | findstr /c:\"ADBORA_OK\" >nul || goto restorefail\r\n");
+            sb.Append("\"%ADB%\" %SERIAL% shell rm -rf %ST%\r\n");
+            sb.Append("echo %1 OK\r\nexit /b 0\r\n");
+            sb.Append(":restorefail\r\n\"%ADB%\" %SERIAL% shell rm -rf %ST% >nul 2>nul\r\nexit /b 1\r\n");
+        }
+        sb.Append(":done\r\necho.\r\necho OK\r\npause\r\nexit /b 0\r\n");
         sb.Append(":failed\r\necho.\r\necho Installation fehlgeschlagen / installation failed\r\npause\r\nexit /b 1\r\n");
         return sb.ToString();
     }
@@ -560,8 +636,11 @@ internal sealed class BackupService
     public async Task<BackupReport> BackupAsync(List<BackupSelection> selections, string destination, string deviceModel)
     {
         Directory.CreateDirectory(destination);
-        string runDir = Path.Combine(destination,
-            "Backup_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + "_" + Guid.NewGuid().ToString("N")[..6]);
+        string tag = DeviceTag(deviceModel);
+        string runName = Tagged("Backup_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"), tag);
+        string runDir = Path.Combine(destination, runName);
+        if (Directory.Exists(runDir) || File.Exists(runDir))
+            runDir = Path.Combine(destination, runName + "_" + Guid.NewGuid().ToString("N")[..6]);
         Directory.CreateDirectory(runDir);
 
         var summary = new BackupReport { Directory = runDir, Device = _adb.Serial, DeviceModel = deviceModel };
@@ -626,7 +705,7 @@ internal sealed class BackupService
                             {
                                 if (app.Apks.Count == 0)
                                     throw new AdbException(Loc.T("Keine APK-Pfade vorhanden", "No APK paths available"));
-                                fileNames = ApkFileNames(app);
+                                fileNames = ApkFileNames(app, tag);
                                 for (int i = 0; i < app.Apks.Count; i++)
                                     await PullApkAsync(app.Apks[i], Path.Combine(staging, fileNames[i]));
 
@@ -641,12 +720,24 @@ internal sealed class BackupService
                                         while (!used.Add(entryName)) entryName = $"{i:00}_" + entryName;
                                         entries.Add((Path.Combine(staging, fileNames[i]), entryName));
                                     }
-                                    string bundleName = SafeName(app.Name, 65) + (app.Version.Length > 0 ? "-" + SafeName(app.Version, 24) : "") + ".apks";
+                                    string bundleName = Tagged(SafeName(app.Name, 65) + (app.Version.Length > 0 ? "-" + SafeName(app.Version, 24) : ""), tag) + ".apks";
                                     ApkBundle.Create(Path.Combine(staging, bundleName), entries);
                                     foreach (var (file, _) in entries) File.Delete(file);
                                     bundleEntries = entries.Select(e => e.EntryName).ToList();
                                     fileNames = new List<string> { bundleName };
                                 }
+                            }
+                            else if (kind == "Internal")
+                            {
+                                // Internal app data (save games, settings, databases) via run-as – debuggable apps only
+                                string content = Path.Combine(staging, "content");
+                                Directory.CreateDirectory(content);
+                                string tar = Path.Combine(content, InternalTarName);
+                                await _adb.ExecOutToFileAsync(InternalBackupCommand(app.Package), tar, _token);
+                                long length = new FileInfo(tar).Length;
+                                if (length < 1024 || length % 512 != 0)
+                                    throw new AdbException(Loc.T("Interne App-Daten konnten nicht gelesen werden (run-as).",
+                                        "Internal app data could not be read (run-as)."));
                             }
                             else
                             {
@@ -702,7 +793,7 @@ internal sealed class BackupService
                             {
                                 Directory.Move(staging, Path.Combine(folder, "APK"));
                                 await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.txt"), InstallInstructions(fileNames, bundleEntries), new UTF8Encoding(false), CancellationToken.None);
-                                await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.cmd"), InstallScript(fileNames, bundleEntries, _adb.Executable), new UTF8Encoding(false), CancellationToken.None);
+                                await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.cmd"), InstallScript(fileNames, bundleEntries, _adb.Executable, app.Package), new UTF8Encoding(false), CancellationToken.None);
                                 json["apk_type"] = bundleEntries.Count > 0 ? "split-apks" : fileNames.Count > 1 ? "split" : "single";
                                 if (bundleEntries.Count > 0)
                                     json["apks_entries"] = new JsonArray(bundleEntries.Select(n => (JsonNode?)n).ToArray());

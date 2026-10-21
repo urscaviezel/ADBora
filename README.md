@@ -57,9 +57,10 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 | Komponente | Quelle auf Android | Ziel im App-Ordner |
 |---|---|---|
-| APK | alle von `pm path` gemeldeten APKs | `APK/App-Name-Version.apk`; Split-Apps als eine `App-Name-Version.apks` (abschaltbar, dann Basis + Splits einzeln) |
+| APK | alle von `pm path` gemeldeten APKs | `APK/App-Name-Version_Gerät.apk` (z. B. `Witchblood-1.0_PFDMR.apk`); Split-Apps als eine `App-Name-Version_Gerät.apks` (abschaltbar, dann Basis + Splits einzeln) |
 | OBB | `/sdcard/Android/obb/<Paket>` | `OBB/` |
 | Daten | `/sdcard/Android/data/<Paket>` | `Data/` |
+| Interne Daten | `/data/data/<Paket>` per `run-as` – nur bei debuggbaren Apps (Spalte „+ intern“), ohne Caches; teils liegen Spielstände nur hier | `Internal/data.tar` |
 
 Private Daten unter `/data/data` (Logins, interne Datenbanken, viele Spielstände)
 sind **nicht** enthalten; es werden keine Root-Rechte verwendet. Verweigert ein
@@ -73,10 +74,10 @@ Version und Icon werden im Metadaten-Cache gespeichert (nur Metadaten).
 
 ```text
 Speicherort/
-  Backup_2026-09-30_11-42-58_21264b/
+  Backup_2026-10-21_10-05-28_PFDMR/
     App-Name [com.example]/
       APK/  OBB/  Data/
-      INSTALL.cmd
+      INSTALL.cmd      (Doppelklick: APK, dann OBB und Data aufs Gerät / double-click: APK, then OBB and Data)
       INSTALL.txt
       manifest.json
     backup-report.json
@@ -151,7 +152,8 @@ ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
   ohne App auf dem Headset. XR-Werte erscheinen, sobald eine VR-App läuft.
 - **Werte auswählen …**: pro Wert Kachel und/oder Graph (bis 6 Verläufe über 2 Minuten mit
   Min/Ø/Max); die Spalte „Aktuell“ zeigt, was das Gerät liefert – nicht jedes Headset liefert
-  jeden Wert (die Quest z. B. keine Temperaturen). Auswahl wird gemerkt.
+  jeden Wert (die Quest z. B. keine Temperaturen). Beim Play For Dream steht dort auch, warum ein
+  Wert fehlt („nur Quest“ bzw. „nur mit PFD-Metrics“). Auswahl wird gemerkt.
 - **CSV-Protokoll** nach `Dokumente\ADBora\Metrics` (eine Zeile pro Sekunde).
 - **HUD im Headset**: [PFD-Metrics](https://github.com/urscaviezel/PFD-Metrics) (Play For Dream)
   bzw. OVR Metrics Tool (Quest) ein-/ausschalten. Fehlt die App, installiert ADBora PFD-Metrics
@@ -250,9 +252,10 @@ Download: https://developer.android.com/tools/releases/platform-tools
 
 | Component | Source on Android | Target in the app folder |
 |---|---|---|
-| APK | all APKs reported by `pm path` | `APK/App-Name-Version.apk`; split apps as one `App-Name-Version.apks` (can be switched off, then base + splits as single files) |
+| APK | all APKs reported by `pm path` | `APK/App-Name-Version_Device.apk` (e.g. `Witchblood-1.0_PFDMR.apk`); split apps as one `App-Name-Version_Device.apks` (can be switched off, then base + splits as single files) |
 | OBB | `/sdcard/Android/obb/<package>` | `OBB/` |
 | Data | `/sdcard/Android/data/<package>` | `Data/` |
+| Internal data | `/data/data/<package>` via `run-as` – debuggable apps only (column "+ internal"), without caches; some games keep their saves only here | `Internal/data.tar` |
 
 Private data in `/data/data` (logins, internal databases, many save games) is
 **not** included; no root access is used. If a device refuses `adb pull`,
@@ -329,7 +332,8 @@ path, not the theoretical bus speed.
   app on the headset. XR values appear as soon as a VR app is running.
 - **Select values …**: tile and/or graph per value (up to 6 histories over 2 minutes with
   min/avg/max); the "Current" column shows what the device delivers – not every headset
-  delivers every value (the Quest e.g. no temperatures). The selection is remembered.
+  delivers every value (the Quest e.g. no temperatures). On the Play For Dream it also says why
+  a value is missing ("Quest only" or "PFD-Metrics only"). The selection is remembered.
 - **CSV log** to `Documents\ADBora\Metrics` (one row per second).
 - **HUD on the headset**: switch [PFD-Metrics](https://github.com/urscaviezel/PFD-Metrics)
   (Play For Dream) or OVR Metrics Tool (Quest) on/off. If the app is missing, ADBora installs

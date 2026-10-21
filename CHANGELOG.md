@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.5.1 – 2026-10-21
+
+- DE: APK Backup: Dateien und Backup-Ordner tragen das Gerät im Namen, z. B.
+  `Witchblood-1.0_PFDMR.apk` bzw. `Backup_2026-10-21_10-05-28_Quest3` – INSTALL.cmd/INSTALL.txt
+  verwenden die neuen Namen. INSTALL.cmd stellt jetzt alles wieder her: APK, danach OBB- und
+  Data-Ordner (sofern im Backup).
+- DE: Spielstände: Bei debuggbaren Apps (viele VR-Spiele) sichert „Daten“ jetzt zusätzlich die internen
+  App-Daten (`/data/data/<Paket>` per run-as, ohne Caches) nach `Internal/data.tar`; Batch-Restore und
+  INSTALL.cmd schreiben sie zurück. Spalte „Datenordner“ zeigt „+ intern“ bzw. „Nur intern“.
+- DE: Wiederherstellung nach Neuinstallation: zurückkopierte Dateien in Android/data und Android/obb
+  gehörten dem ADB-Benutzer, sodass das Spiel Spielstände und Einstellungen nicht lesen/überschreiben
+  konnte – ADBora (Batch-Restore) und INSTALL.cmd geben dem Spiel jetzt Lese-/Schreibzugriff darauf.
+- DE: Backup warnt, wenn eine App mit „Daten“ noch läuft – viele Spiele schreiben Einstellungen und
+  Spielstände erst beim Beenden.
+- DE: OBB-Wiederherstellung kopiert jetzt ebenfalls über einen Zwischenordner (Unterordner in
+  Android/obb wurden von neueren Android-Versionen abgelehnt).
+- EN: APK backup: files and backup folders carry the device in their name, e.g.
+  `Witchblood-1.0_PFDMR.apk` or `Backup_2026-10-21_10-05-28_Quest3` – INSTALL.cmd/INSTALL.txt use
+  the new names. INSTALL.cmd now restores everything: APK, then the OBB and Data folders (if in the
+  backup).
+- EN: Save games: for debuggable apps (many VR games), "Data" now also backs up the internal app data
+  (`/data/data/<package>` via run-as, without caches) to `Internal/data.tar`; batch restore and INSTALL.cmd
+  write it back. The "Data folder" column shows "+ internal" or "Internal only".
+- EN: Restore after a fresh install: files copied back to Android/data and Android/obb belonged to the
+  ADB user, so the game could not read/overwrite its save games and settings – ADBora (batch restore) and
+  INSTALL.cmd now give the game read/write access to them.
+- EN: Backup warns if an app with "Data" is still running – many games write settings and save games
+  only when they are quit.
+- EN: OBB restore now also copies through a staging folder (newer Android versions refused sub folders
+  in Android/obb).
+- DE: Performance › „Werte auswählen …“: beim Play For Dream zeigt „Aktuell“ jetzt, warum ein
+  Wert fehlt („nur Quest“ bzw. „nur mit PFD-Metrics“); „Alle anzeigen“ wählt die reinen
+  Quest-Werte dort nicht mehr aus; der GPU-Takt (System), den das Gerät sperrt, erscheint dort
+  nicht mehr in der Liste.
+- EN: Performance › "Select values …": on the Play For Dream, "Current" now shows why a value is
+  missing ("Quest only" or "PFD-Metrics only"); "Show all" no longer selects the Quest-only values
+  there; the system GPU clock, which the device blocks, is no longer listed there.
+
 ## v1.5.0 – 2026-10-17
 
 - DE: Neuer Tab **Performance**: Leistungswerte der XR-Runtime (Play For Dream: PerfStats /

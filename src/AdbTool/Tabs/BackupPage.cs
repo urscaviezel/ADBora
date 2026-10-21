@@ -113,9 +113,9 @@ internal sealed class BackupPage : UserControl, IPage
         AddRow(Ui.Row(_selectAll, _selectNone, _count));
 
         var note = Ui.Label(
-            "Daten = zugängliche Android/data-Ordner. Private App-Daten, Logins und interne Datenbanken sind nicht enthalten. " +
+            "Daten = Android/data-Ordner; bei debuggbaren Apps („+ intern“) zusätzlich die internen App-Daten (Spielstände, Einstellungen) per run-as. Bei anderen Apps sind interne Daten für ADB gesperrt. " +
             "Gesperrt oder nicht prüfbar = nicht auswählbar. ‚Alle‘ gilt für die gesamte Liste, auch bei aktiver Suche.",
-            "Data = accessible Android/data folders. Private app data, logins and internal databases are not included. " +
+            "Data = Android/data folders; for debuggable apps (\"+ internal\") also the internal app data (save games, settings) via run-as. For other apps, internal data is locked for ADB. " +
             "Blocked or unavailable = cannot be selected. 'All' applies to the entire list, including filtered apps.", muted: true);
         note.AutoSize = true;
         Ui.WrapTo(note, this);
@@ -261,7 +261,7 @@ internal sealed class BackupPage : UserControl, IPage
     {
         ColApk => app.Apks.Count > 0,
         ColObb => app.Obb == FolderState.Present,
-        ColData => app.Data == FolderState.Present,
+        ColData => app.Data == FolderState.Present || app.Debuggable,
         _ => false
     };
 
@@ -273,7 +273,14 @@ internal sealed class BackupPage : UserControl, IPage
         {
             FolderState state = e.ColumnIndex == ColObbState ? app.Obb : app.Data;
             e.Value = state.Text();
-            e.CellStyle!.ForeColor = state == FolderState.Present ? Theme.Accent : Theme.Muted;
+            bool ok = state == FolderState.Present;
+            if (e.ColumnIndex == ColDataState && app.Debuggable)
+            {
+                // Debuggable apps: internal data (save games etc.) is backed up too, via run-as
+                e.Value = ok ? Loc.T("Vorhanden + intern", "Available + internal") : Loc.T("Nur intern", "Internal only");
+                ok = true;
+            }
+            e.CellStyle!.ForeColor = ok ? Theme.Accent : Theme.Muted;
             e.CellStyle.SelectionForeColor = e.CellStyle.ForeColor;
             e.FormattingApplied = true;
         }
@@ -616,6 +623,33 @@ internal sealed class BackupPage : UserControl, IPage
             return;
         }
         SaveDestination();
+
+        // Games often write settings / save games only when they are quit – warn if a selected app is still running
+        var withData = selections.Where(sel => sel.Data).ToList();
+        if (withData.Count > 0)
+        {
+            var running = new List<string>();
+            try
+            {
+                var probe = new AdbClient(_state.AdbPath!, device.Serial);
+                string pids = string.Join("; ", withData.Select(sel => $"pidof {sel.App.Package} >/dev/null && echo RUN:{sel.App.Package}"));
+                AdbResult r = await probe.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(15), "shell", pids);
+                var lines = r.Output.Split('\n').Select(l => l.Trim()).ToHashSet();
+                foreach (BackupSelection sel in withData)
+                    if (lines.Contains("RUN:" + sel.App.Package))
+                        running.Add(sel.App.Name);
+            }
+            catch (AdbException) { }
+            if (running.Count > 0)
+            {
+                DialogResult answer = MessageBox.Show(FindForm(),
+                    Loc.T($"Diese App(s) laufen noch auf dem Headset:\n\n{string.Join("\n", running)}\n\nViele Spiele schreiben Einstellungen und Spielstände erst beim Beenden. Für ein vollständiges Backup das Spiel im Headset zuerst normal beenden (nicht nur absetzen).\n\nTrotzdem jetzt sichern?",
+                          $"These app(s) are still running on the headset:\n\n{string.Join("\n", running)}\n\nMany games write settings and save games only when they are quit. For a complete backup, quit the game on the headset first (not just take it off).\n\nBack up anyway?"),
+                    Loc.T("App läuft noch", "App still running"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                if (answer != DialogResult.Yes)
+                    return;
+            }
+        }
 
         if (!_state.TryBeginOperation(Loc.T("Backup läuft", "Backup running")))
             return;
