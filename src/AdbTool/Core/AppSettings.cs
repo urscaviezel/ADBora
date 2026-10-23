@@ -133,7 +133,7 @@ internal sealed class AppSettings
         if (settings.SavedCommands.Count == 0 && fresh)
             settings.SavedCommands.AddRange(DefaultCommands());
 
-        settings.Language = settings.Language == "en" ? "en" : "de";
+        settings.Language = string.IsNullOrWhiteSpace(settings.Language) ? "de" : settings.Language.Trim().ToLowerInvariant();
         if (settings.SpeedPort is < 1 or > 65535) settings.SpeedPort = 5001;
         if (settings.SpeedDurationSeconds <= 0) settings.SpeedDurationSeconds = 600;
         if (settings.SpeedRateMbps <= 0) settings.SpeedRateMbps = 1900;

@@ -36,6 +36,8 @@ internal sealed class AppEntry
     public FolderState Data { get; set; } = FolderState.Unchecked;
     /// <summary>App is debuggable: "run-as" reaches its internal data (/data/data/&lt;package&gt;, e.g. save games).</summary>
     public bool Debuggable { get; set; }
+    /// <summary>Install / last update time (Unix seconds, mtime of the base APK); 0 = unknown.</summary>
+    public long InstallTime { get; set; }
     public string Note { get; set; } = "";
     public string Version { get; set; } = "";
     public string VersionCode { get; set; } = "";
@@ -222,6 +224,29 @@ internal sealed class BackupService
 
         if (resolveNames)
             _log(Loc.T($"App-Details: {hits} aus Cache, {loaded} neu eingelesen.", $"App details: {hits} cached, {loaded} newly read."));
+
+        // Install / update time: mtime of each base APK, one shell call for all apps
+        try
+        {
+            var bases = apps.Where(a => a.Apks.Count > 0)
+                .Select(a => a.Apks.FirstOrDefault(p => p.EndsWith("/base.apk")) ?? a.Apks[0]).ToList();
+            if (bases.Count > 0)
+            {
+                AdbResult stat = await _adb.CaptureAsync(_token, TimeSpan.FromSeconds(30), "shell",
+                    "stat -c '%Y %n' " + string.Join(" ", bases.Select(AdbClient.ShellQuote)));
+                var times = new Dictionary<string, long>(StringComparer.Ordinal);
+                foreach (string line in stat.Output.Split('\n'))
+                {
+                    string l = line.Trim();
+                    int space = l.IndexOf(' ');
+                    if (space > 0 && long.TryParse(l[..space], out long t)) times[l[(space + 1)..]] = t;
+                }
+                foreach (AppEntry a in apps)
+                    if (a.Apks.Count > 0 && times.TryGetValue(a.Apks.FirstOrDefault(p => p.EndsWith("/base.apk")) ?? a.Apks[0], out long t))
+                        a.InstallTime = t;
+            }
+        }
+        catch (AdbException) { }
 
         return apps
             .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.3 – 2026-10-23
+
+- DE: APK Backup: Sortierung umschaltbar zwischen „Zuletzt installiert“ (Standard bei jedem Start, neueste
+  zuoberst) und „Alphabetisch“; Auswahl bleibt beim Umschalten erhalten. Installationsdatum im Tooltip.
+- DE: Weitere Sprachen: „Sprache ändern“ in den Allgemeinen Einstellungen ersetzt die
+  Auswahl Deutsch/Englisch – Sprache wählen sowie zusätzliche Sprachen aus dem GitHub-Repository (Ordner
+  `lang`) installieren, aktualisieren oder entfernen, ohne neue ADBora-Version. Vorlage für Übersetzungen:
+  `lang/template.json`. Erste zusätzliche Sprache: Französisch.
+- EN: APK backup: sort order switchable between "Last installed" (default at every start, newest first)
+  and "Alphabetical"; the selection is kept when switching. Install date in the tooltip.
+- EN: More languages: "Change language" in the general settings replaces the
+  German/English choice – choose the language and install, update or remove additional languages from the
+  GitHub repository (folder `lang`) without a new ADBora version. Translation template: `lang/template.json`.
+  First additional language: French.
+
 ## v1.5.2 – 2026-10-23
 
 - DE: ADBora läuft nur noch einmal: ein zweiter Start holt das offene Fenster nach vorne (zwei Instanzen

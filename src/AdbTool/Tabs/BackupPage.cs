@@ -17,6 +17,9 @@ internal sealed class BackupPage : UserControl, IPage
     private readonly TextBox _search = Ui.TextBox(320);
     private readonly DarkButton _scan = Ui.Button("Apps einlesen", "Scan apps", ButtonKind.Primary);
     private readonly DarkButton _clearSearch = Ui.Button("Suche löschen", "Clear search");
+    // Sort order: 0 = last installed first (default at every start), 1 = alphabetical
+    private readonly DarkComboBox _sort = Ui.Combo(200);
+    private bool _sorting;
     private readonly DarkButton _selectAll = Ui.Button("Alle auswählen", "Select all");
     private readonly DarkButton _selectNone = Ui.Button("Alle abwählen", "Deselect all");
     private readonly Label _count = Ui.Value("");
@@ -84,11 +87,27 @@ internal sealed class BackupPage : UserControl, IPage
         _search.TextChanged += (_, _) => FilterRows();
         _clearSearch.Click += (_, _) => _search.Clear();
         _scan.Click += async (_, _) => await ScanAsync();
+        void SortItems()
+        {
+            int selected = Math.Max(0, _sort.SelectedIndex);
+            _sort.Items.Clear();
+            _sort.Items.Add(Loc.T("Zuletzt installiert", "Last installed"));
+            _sort.Items.Add(Loc.T("Alphabetisch", "Alphabetical"));
+            _sorting = true;
+            _sort.SelectedIndex = selected;
+            _sorting = false;
+            _sort.Invalidate();
+        }
+        SortItems();
+        Loc.LanguageChanged += SortItems;
+        _sort.Margin = new Padding(0, 4, 8, 0);
+        _sort.SelectedIndexChanged += (_, _) => { if (!_sorting) Resort(); };
         var hint = _hint = Ui.Label("App-Name, Version und Icon werden automatisch ermittelt.", "App name, version and icon are resolved automatically.", muted: true);
         hint.Margin = new Padding(8, 10, 0, 0);
-        var toolbar = new TableLayoutPanel { ColumnCount = 4, RowCount = 1, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 10) };
+        var toolbar = new TableLayoutPanel { ColumnCount = 5, RowCount = 1, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 10) };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _search.Anchor = AnchorStyles.Left | AnchorStyles.Right;
@@ -96,7 +115,8 @@ internal sealed class BackupPage : UserControl, IPage
         toolbar.Controls.Add(_scan, 0, 0);
         toolbar.Controls.Add(_search, 1, 0);
         toolbar.Controls.Add(_clearSearch, 2, 0);
-        toolbar.Controls.Add(hint, 3, 0);
+        toolbar.Controls.Add(_sort, 3, 0);
+        toolbar.Controls.Add(hint, 4, 0);
         AddRow(toolbar);
 
         // Table -----------------------------------------------------------
@@ -400,6 +420,30 @@ internal sealed class BackupPage : UserControl, IPage
         return bmp;
     }
 
+    private List<AppEntry> Sorted(IEnumerable<AppEntry> apps) => _sort.SelectedIndex == 0
+        ? apps.OrderByDescending(a => a.InstallTime).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
+        : apps.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(a => a.Package, StringComparer.Ordinal).ToList();
+
+    /// <summary>Re-sorts the list and keeps the ticked checkboxes.</summary>
+    private void Resort()
+    {
+        if (_apps.Count == 0) return;
+        var ticks = new Dictionary<AppEntry, (object?, object?, object?)>();
+        foreach (DataGridViewRow row in _grid.Rows)
+            if (row.Tag is AppEntry app)
+                ticks[app] = (row.Cells[ColApk].Value, row.Cells[ColObb].Value, row.Cells[ColData].Value);
+        _apps = Sorted(_apps);
+        Populate();
+        foreach (DataGridViewRow row in _grid.Rows)
+            if (row.Tag is AppEntry app && ticks.TryGetValue(app, out var t))
+            {
+                row.Cells[ColApk].Value = t.Item1;
+                row.Cells[ColObb].Value = t.Item2;
+                row.Cells[ColData].Value = t.Item3;
+            }
+        UpdateCount();
+    }
+
     private void Populate()
     {
         _grid.SuspendLayout();
@@ -413,6 +457,9 @@ internal sealed class BackupPage : UserControl, IPage
             row.Cells[ColApp].ToolTipText = app.Note.Length > 0
                 ? app.Note
                 : Loc.T($"{app.Apks.Count} APK-Datei(en), inklusive Split-APKs", $"{app.Apks.Count} APK file(s), including split APKs");
+            if (app.InstallTime > 0)
+                row.Cells[ColApp].ToolTipText += "\n" + Loc.T("Installiert/aktualisiert: ", "Installed/updated: ")
+                    + DateTimeOffset.FromUnixTimeSeconds(app.InstallTime).LocalDateTime.ToString("g");
         }
         _grid.ResumeLayout();
         FilterRows();
@@ -565,7 +612,7 @@ internal sealed class BackupPage : UserControl, IPage
         try
         {
             List<AppEntry> apps = await Task.Run(() => service.ScanAsync(resolveNames: true));
-            _apps = apps;
+            _apps = Sorted(apps);
             _scannedSerial = device.Serial;
             Populate();
             OnMessage(Loc.T($"{apps.Count} nachinstallierte Apps eingelesen. APK, OBB und Daten für die Sicherung auswählen.",

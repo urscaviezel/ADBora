@@ -179,6 +179,19 @@ ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
   Systemdienste (cmd) live vom Gerät, durchsuchbar; daraus entstehen per Klick Befehle
   (App starten/beenden, Wert lesen/setzen, Dienst-Hilfe …).
 
+### Sprachen
+
+Deutsch und Englisch sind eingebaut. *Allgemeine Einstellungen › Sprache ändern*
+öffnet die Sprachauswahl: Kreis = aktive Sprache, Haken = weitere Sprache aus dem GitHub-Repository
+(Ordner [`lang`](lang)) installieren bzw. aktualisieren, kein Haken = entfernen. Heruntergeladene
+Sprachen liegen im Datenordner unter `lang\` – ohne neue ADBora-Version.
+
+**Neue Sprache beitragen:** [`lang/template.json`](lang/template.json) kopieren, die Texte rechts
+übersetzen (`{0}`, `{1}` … und `\n` beibehalten), `_meta` ausfüllen und als `lang/<code>.json`
+(z. B. `fr.json`) speichern – Pull Requests willkommen. Zum Testen die Datei in den Sprachordner legen
+(Knopf „Sprachordner öffnen“). Fehlende Texte erscheinen auf Englisch. `lang/_reference-de.json` zeigt
+zu jedem englischen Text das deutsche Original. Die Vorlage erzeugt `tools/LangExtract` aus dem Quellcode.
+
 ### Build
 
 Voraussetzung (nur Build-PC): .NET 8 SDK, für den Installer zusätzlich
@@ -359,6 +372,19 @@ path, not the theoretical bus speed.
 - **Explore …:** reads apps, system properties (getprop), settings and system services (cmd)
   live from the device, searchable; one click builds commands from them (start/stop app,
   read/set value, service help …).
+
+### Languages
+
+German and English are built in. *General settings › Change language* opens the
+language dialog: circle = active language, tick = install / update a further language from the GitHub
+repository (folder [`lang`](lang)), no tick = remove. Downloaded languages are stored in the data folder
+under `lang\` – no new ADBora version needed.
+
+**Contribute a language:** copy [`lang/template.json`](lang/template.json), translate the texts on the
+right (keep `{0}`, `{1}` … and `\n`), fill in `_meta` and save it as `lang/<code>.json` (e.g. `fr.json`)
+– pull requests welcome. To test it, put the file into the language folder (button "Open language
+folder"). Missing texts appear in English. `lang/_reference-de.json` shows the German original of every
+English text. The template is generated from the source code by `tools/LangExtract`.
 
 ### Build
 

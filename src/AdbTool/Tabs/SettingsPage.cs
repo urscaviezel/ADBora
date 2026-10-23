@@ -10,8 +10,8 @@ internal sealed class SettingsPage : UserControl, IPage
 {
     private readonly AppState _state;
 
-    private readonly RadioButton _german = new DarkRadio { Text = "Deutsch", ForeColor = Theme.Text, BackColor = Color.Transparent, Font = Theme.BaseFont, Margin = new Padding(0, 6, 20, 4) };
-    private readonly RadioButton _english = new DarkRadio { Text = "English", ForeColor = Theme.Text, BackColor = Color.Transparent, Font = Theme.BaseFont, Margin = new Padding(0, 6, 20, 4) };
+    private readonly Label _languageName = new() { AutoSize = true, ForeColor = Theme.Text, BackColor = Color.Transparent, Font = Theme.BaseFont, Margin = new Padding(0, 9, 12, 4) };
+    private readonly DarkButton _language = Ui.Button("Sprache ändern", "Change language");
     private readonly CheckBox _stopServer = Ui.CheckBox("ADB-Server beim Beenden stoppen", "Stop ADB server on exit");
 
     private readonly TextBox _adbPath = Ui.TextBox(420);
@@ -86,25 +86,29 @@ internal sealed class SettingsPage : UserControl, IPage
         // --- General ---------------------------------------------------
         var general = new Card("Allgemein", "General") { Composited = true };
         var generalGrid = Ui.Grid(2);
-        _german.Checked = !Loc.IsEnglish;
-        _english.Checked = Loc.IsEnglish;
-        void LanguageChosen()
+        void ShowLanguageName() => _languageName.Text = Loc.Language switch
         {
-            string lang = _english.Checked ? "en" : "de";
-            if (lang == _state.Settings.Language) return;
+            "de" => "Deutsch",
+            "en" => "English",
+            string code => Languages.Load(code)?.Name ?? code
+        };
+        ShowLanguageName();
+        Loc.LanguageChanged += ShowLanguageName;
+        _language.Click += (_, _) =>
+        {
+            string? lang = LanguageDialog.Show(FindForm());
+            if (lang is null) return;
             _state.Settings.Language = lang;
             _state.Settings.Save();
             Loc.SetLanguage(lang);
-        }
-        _german.CheckedChanged += (_, _) => { if (_german.Checked) LanguageChosen(); };
-        _english.CheckedChanged += (_, _) => { if (_english.Checked) LanguageChosen(); };
+        };
         _stopServer.Checked = _state.Settings.StopAdbServerOnExit;
         _stopServer.CheckedChanged += (_, _) =>
         {
             _state.Settings.StopAdbServerOnExit = _stopServer.Checked;
             _state.Settings.Save();
         };
-        Ui.AddRow(generalGrid, Ui.Label("Sprache / Language", "Language / Sprache", muted: true), Ui.Row(_german, _english));
+        Ui.AddRow(generalGrid, Ui.Label("Sprache / Language", "Language / Sprache", muted: true), Ui.Row(_languageName, _language));
         Ui.AddRow(generalGrid, new Label { Width = 1 }, _stopServer);
         Ui.AddRow(generalGrid, Ui.Label("ADBora", "ADBora", muted: true), _toolVersion);
         Ui.AddRow(generalGrid, Ui.Label(".NET-Laufzeit", ".NET runtime", muted: true), _dotnetVersion);
@@ -151,7 +155,7 @@ internal sealed class SettingsPage : UserControl, IPage
                 MessageBox.Show(this, Loc.T("adb.exe wurde nicht gefunden.", "adb.exe was not found."), "ADBora",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
-        download.Click += (_, _) => OpenUrl(AdbLocator.PlatformToolsUrl + (Loc.IsEnglish ? "?hl=en" : "?hl=de"));
+        download.Click += (_, _) => OpenUrl(AdbLocator.PlatformToolsUrl + ("?hl=" + Loc.Language));
         help.Click += (_, _) => ShowSetupHelp(missing: false);
         // Two fixed rows instead of a wrapping panel: a wrapping FlowLayoutPanel
         // inside an auto-sized table can clip its second line.
@@ -261,7 +265,7 @@ internal sealed class SettingsPage : UserControl, IPage
         _refreshInfo.Enabled = idle && _state.SelectedDevice?.IsReady == true;
         _connect.Enabled = idle && _state.HasAdb;
         _disconnect.Enabled = idle && _state.HasAdb;
-        _german.Enabled = _english.Enabled = idle;
+        _language.Enabled = idle;
     }
 
     private void UpdateAdbInfo()
@@ -748,7 +752,7 @@ internal sealed class SettingsPage : UserControl, IPage
         var download = Ui.Button("Platform-Tools herunterladen", "Download Platform-Tools", ButtonKind.Primary);
         var choose = Ui.Button("adb.exe auswählen …", "Choose adb.exe …");
         var close = Ui.Button("Schließen", "Close");
-        download.Click += (_, _) => OpenUrl(AdbLocator.PlatformToolsUrl + (Loc.IsEnglish ? "?hl=en" : "?hl=de"));
+        download.Click += (_, _) => OpenUrl(AdbLocator.PlatformToolsUrl + ("?hl=" + Loc.Language));
         choose.Click += (_, _) => { dialog.Close(); ChooseAdb(); };
         close.Click += (_, _) => dialog.Close();
         buttons.Controls.AddRange(new Control[] { download, choose, close });
