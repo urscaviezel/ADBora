@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.2 – 2026-10-23
+
+- DE: ADBora läuft nur noch einmal: ein zweiter Start holt das offene Fenster nach vorne (zwei Instanzen
+  würden sich beim selben ADB-Gerät in die Quere kommen).
+- EN: ADBora runs only once: starting it again brings the open window to the front (two instances would
+  get in each other's way on the same ADB device).
+
 ## v1.5.1 – 2026-10-21
 
 - DE: APK Backup: Dateien und Backup-Ordner tragen das Gerät im Namen, z. B.

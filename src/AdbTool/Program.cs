@@ -41,6 +41,32 @@ internal static class Program
         if (pretend >= 0 && pretend + 1 < args.Length)
             Updater.PretendVersion = args[pretend + 1];
 
+        // Only one ADBora at a time – two instances would fight over the same ADB device (build smoke test excepted)
+        Mutex? instance = null;
+        if (!_smokeTest)
+        {
+            instance = new Mutex(true, InstanceMutexName, out bool created);
+            if (!created)
+            {
+                // Running instance with a window: bring it to the front and quit
+                if (ActivateRunningInstance())
+                {
+                    instance.Dispose();
+                    return 0;
+                }
+                // No window (yet / any more), e.g. the old instance is just closing after an update: wait briefly
+                bool acquired;
+                try { acquired = instance.WaitOne(TimeSpan.FromSeconds(10)); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired)
+                {
+                    ActivateRunningInstance();
+                    instance.Dispose();
+                    return 0;
+                }
+            }
+        }
+
         ApplicationConfiguration.Initialize();
         Theme.InitScale();
         try
@@ -51,7 +77,45 @@ internal static class Program
         {
             ReportCrash(ex);
         }
+        finally
+        {
+            if (instance is not null)
+            {
+                try { instance.ReleaseMutex(); } catch { }
+                instance.Dispose();
+            }
+        }
         return 0;
+    }
+
+    private const string InstanceMutexName = @"Local\ADBora.SingleInstance";
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    /// <summary>Restores and focuses the window of an already running ADBora. False if none was found.</summary>
+    private static bool ActivateRunningInstance()
+    {
+        using var current = System.Diagnostics.Process.GetCurrentProcess();
+        foreach (var other in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
+        {
+            using (other)
+            {
+                if (other.Id == current.Id) continue;
+                IntPtr handle = other.MainWindowHandle;
+                if (handle == IntPtr.Zero) continue;
+                if (IsIconic(handle)) ShowWindow(handle, 9); // SW_RESTORE
+                SetForegroundWindow(handle);
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int CheckApk(string path)
