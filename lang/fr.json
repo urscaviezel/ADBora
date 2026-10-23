@@ -2,7 +2,7 @@
   "_meta": {
     "code": "fr",
     "name": "Français",
-    "version": "1.5.3",
+    "version": "1.5.5",
     "app": "ADBora",
     "translator": "Claude (AI), review welcome"
   },
@@ -359,7 +359,7 @@
   "License": "Licence",
   "Limit": "Limite",
   "Limit bandwidth": "Limiter la bande passante",
-  "Load": "Charge",
+  "Load": "Charger",
   "Loading app details: {0}": "Chargement des détails de l'app : {0}",
   "Loading languages available online …": "Chargement des langues disponibles en ligne …",
   "Loading …": "Chargement …",
@@ -706,5 +706,15 @@
   "✔ {0} copied ({1:0.0} s, {2:0.0} MB/s)": "✔ {0} copié ({1:0.0} s, {2:0.0} Mo/s)",
   "✔ {0} was uninstalled.": "✔ {0} a été désinstallé.",
   "✖ Installation failed": "✖ Échec de l'installation",
-  "✖ adb.exe not found – please set it up.": "✖ adb.exe introuvable – veuillez le configurer."
+  "✖ adb.exe not found – please set it up.": "✖ adb.exe introuvable – veuillez le configurer.",
+  " · {0} errors": " · {0} erreurs",
+  "Broken: ": "Défectueux : ",
+  "File name must be the language code, e.g. it.json": "Le nom du fichier doit être le code de langue, p. ex. it.json",
+  "Invalid JSON in line {0}: {1}": "JSON invalide à la ligne {0} : {1}",
+  "Line breaks: \"{0}\"": "Sauts de ligne : « {0} »",
+  "No JSON object found.": "Aucun objet JSON trouvé.",
+  "Placeholders: \"{0}\"": "Espaces réservés : « {0} »",
+  "The file contains no texts.": "Le fichier ne contient aucun texte.",
+  "Translated": "Traduit",
+  "{0} texts missing – they appear in English.": "{0} textes manquants – ils s'affichent en anglais."
 }
