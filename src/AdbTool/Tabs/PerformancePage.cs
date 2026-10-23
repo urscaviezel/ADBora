@@ -106,8 +106,25 @@ internal sealed class PerformancePage : UserControl, IPage
         _hudOff.Click += async (_, _) => await HudAsync(false);
         _select.Click += (_, _) => ChooseValues();
         _install.Click += async (_, _) => await InstallHudAsync();
-        var row = Ui.Row(_start, _stop, _csv, _openLogs, _select, _hudOn, _hudOff, _install);
-        row.WrapContents = true;
+        // Two button groups (monitoring / display + HUD) that wrap as a whole when the window is narrow
+        var monitor = Ui.Row(_start, _stop, _csv, _openLogs);
+        var display = Ui.Row(_select, _hudOn, _hudOff, _install);
+        monitor.Margin = new Padding(0, 0, 16, 6);
+        display.Margin = new Padding(0, 0, 0, 6);
+        var row = new FlowLayoutPanel
+        {
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true, BackColor = Color.Transparent, Margin = new Padding(0)
+        };
+        row.Controls.Add(monitor);
+        row.Controls.Add(display);
+        void FitRow()
+        {
+            int width = ClientSize.Width - Padding.Horizontal - Theme.S(40);
+            if (width > 100) row.MaximumSize = new Size(width, 0);
+        }
+        Resize += (_, _) => FitRow();
+        FitRow();
         _status.Margin = new Padding(0, 8, 0, 0);
         _sources.Margin = new Padding(0, 2, 0, 0);
         _sources.ForeColor = Theme.Muted;

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.4 – 2026-10-23
+
+- DE: Performance: Die Schaltflächen sind in zwei Gruppen (Messung / Anzeige + HUD) angeordnet, die bei
+  schmalem Fenster sauber als Ganzes umbrechen.
+- EN: Performance: the buttons are arranged in two groups (monitoring / display + HUD) that wrap neatly
+  as a whole in a narrow window.
+
 ## v1.5.3 – 2026-10-23
 
 - DE: APK Backup: Sortierung umschaltbar zwischen „Zuletzt installiert“ (Standard bei jedem Start, neueste
