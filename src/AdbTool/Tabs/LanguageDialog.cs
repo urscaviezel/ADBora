@@ -8,7 +8,7 @@ namespace AdbTool.Tabs;
 /// <summary>Choose the UI language and add / remove additional languages (GitHub repository, folder "lang").</summary>
 internal static class LanguageDialog
 {
-    private const int ColActive = 0, ColName = 1, ColVersion = 2, ColStatus = 3, ColInstalled = 4;
+    private const int ColActive = 0, ColName = 1, ColVersion = 2, ColStatus = 3, ColCheck = 4, ColInstalled = 5;
 
     private sealed class Row
     {
@@ -17,6 +17,7 @@ internal static class LanguageDialog
         public bool BuiltIn;
         public LanguageFile? Local;
         public OnlineLanguage? Online;
+        public BrokenLanguage? Broken;   // unreadable file: shown with the reason, not selectable
         public bool Installed;   // checkbox state
         public bool Newer => Online is not null && (Local is null || Languages.ParseVersion(Online.Version) > Languages.ParseVersion(Local.Version));
     }
@@ -29,11 +30,14 @@ internal static class LanguageDialog
             new() { Code = "de", Name = "Deutsch", BuiltIn = true, Installed = true },
             new() { Code = "en", Name = "English", BuiltIn = true, Installed = true },
         };
-        foreach (LanguageFile l in Languages.Installed())
+        List<LanguageFile> installed = Languages.Installed(out List<BrokenLanguage> brokenLocal);
+        foreach (LanguageFile l in installed)
             rows.Add(new Row { Code = l.Code, Name = l.Name, Local = l, Installed = true });
+        foreach (BrokenLanguage b in brokenLocal)
+            rows.Add(new Row { Code = b.Code, Name = b.FileName, Broken = b });
         string active = Loc.Language;
 
-        using Form dialog = Ui.Dialog(Loc.T("Sprache", "Language"), 720, 520);
+        using Form dialog = Ui.Dialog(Loc.T("Sprache", "Language"), 860, 560);
         var info = new Label
         {
             Dock = DockStyle.Top, AutoSize = false, Height = Theme.S(58), ForeColor = Theme.Muted,
@@ -70,6 +74,7 @@ internal static class LanguageDialog
         grid.Columns.Add(new DataGridViewTextBoxColumn { AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, HeaderText = Loc.T("Sprache", "Language") });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(80), HeaderText = "Version" });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(190), HeaderText = "Status" });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(150), HeaderText = Loc.T("Übersetzt", "Translated") });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Width = Theme.S(90), HeaderText = Loc.T("Installiert", "Installed") });
         foreach (DataGridViewColumn c in grid.Columns) c.SortMode = DataGridViewColumnSortMode.NotSortable;
         grid.Columns[ColActive].HeaderCell.Style.Alignment = grid.Columns[ColInstalled].HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
@@ -77,6 +82,7 @@ internal static class LanguageDialog
         bool Locked(Row r) => r.BuiltIn || r.Code == Loc.Language || r.Local is { Bundled: true };
         string StatusText(Row r)
         {
+            if (r.Broken is { } b) return Loc.T("Fehlerhaft: ", "Broken: ") + b.Error;
             if (r.BuiltIn) return Loc.T("Eingebaut", "Built in");
             if (r.Local is { Bundled: true }) return Loc.T("Mitgeliefert", "Bundled");
             if (r.Local is not null && r.Newer) return Loc.T($"Update auf {r.Online!.Version}", $"Update to {r.Online!.Version}");
@@ -88,8 +94,36 @@ internal static class LanguageDialog
             grid.Rows.Clear();
             foreach (Row r in rows)
             {
-                int i = grid.Rows.Add("", $"{r.Name} ({r.Code})", r.Local?.Version ?? r.Online?.Version ?? (r.BuiltIn ? AppInfo.Version : ""), StatusText(r), "");
+                string label = r.Broken is { } b ? $"{b.FileName}{(b.Online ? " (GitHub)" : "")}" : $"{r.Name} ({r.Code})";
+                // Check: translated texts and placeholder problems (local file, otherwise the online one)
+                string check = "";
+                string tip = "";
+                LanguageFile? file = r.Local ?? (r.Online is { } o ? Languages.Parse(o.Content, o.Code) : null);
+                if (r.BuiltIn) check = "100 %";
+                else if (file is not null)
+                {
+                    Languages.CheckResult c = Languages.Check(file);
+                    check = c.Total > 0 ? $"{c.Translated} / {c.Total}" : "–";
+                    if (c.Problems.Count > 0)
+                    {
+                        check += Loc.T($" · {c.Problems.Count} Fehler", $" · {c.Problems.Count} errors");
+                        tip = string.Join("\n", c.Problems.Take(15)) + (c.Problems.Count > 15 ? "\n…" : "");
+                    }
+                    else if (c.Total > 0 && c.Translated < c.Total)
+                        tip = Loc.T($"{c.Total - c.Translated} Texte fehlen – sie erscheinen auf Englisch.", $"{c.Total - c.Translated} texts missing – they appear in English.");
+                }
+                int i = grid.Rows.Add("", label, r.Local?.Version ?? r.Online?.Version ?? (r.BuiltIn ? AppInfo.Version : ""), StatusText(r), check, "");
                 grid.Rows[i].Tag = r;
+                if (tip.Length > 0)
+                {
+                    grid.Rows[i].Cells[ColCheck].ToolTipText = tip;
+                    if (tip.Contains('\n') || check.Contains('·')) grid.Rows[i].Cells[ColCheck].Style.ForeColor = Theme.Danger;
+                }
+                if (r.Broken is not null)
+                {
+                    grid.Rows[i].DefaultCellStyle.ForeColor = Theme.Danger;
+                    grid.Rows[i].Cells[ColStatus].ToolTipText = StatusText(r);
+                }
             }
         }
         Fill();
@@ -99,6 +133,7 @@ internal static class LanguageDialog
             if (e.RowIndex < 0 || e.Graphics is null || grid.Rows[e.RowIndex].Tag is not Row r) return;
             if (e.ColumnIndex != ColActive && e.ColumnIndex != ColInstalled) return;
             e.PaintBackground(e.CellBounds, (e.State & DataGridViewElementStates.Selected) != 0);
+            if (r.Broken is not null) { e.Handled = true; return; }
             int bs = Theme.S(18);
             var box = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - bs) / 2, e.CellBounds.Y + (e.CellBounds.Height - bs) / 2, bs, bs);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -137,7 +172,7 @@ internal static class LanguageDialog
         grid.MouseDown += (_, e) =>
         {
             DataGridView.HitTestInfo hit = grid.HitTest(e.X, e.Y);
-            if (hit.Type != DataGridViewHitTestType.Cell || grid.Rows[hit.RowIndex].Tag is not Row r) return;
+            if (hit.Type != DataGridViewHitTestType.Cell || grid.Rows[hit.RowIndex].Tag is not Row r || r.Broken is not null) return;
             if (hit.ColumnIndex == ColInstalled)
             {
                 if (Locked(r) && r.Installed) return;
@@ -188,11 +223,13 @@ internal static class LanguageDialog
         {
             try
             {
-                List<OnlineLanguage> online = await Languages.OnlineAsync(cts.Token);
+                (List<OnlineLanguage> online, List<BrokenLanguage> brokenOnline) = await Languages.OnlineWithErrorsAsync(cts.Token);
                 if (dialog.IsDisposed) return;
+                foreach (BrokenLanguage b in brokenOnline)
+                    rows.Add(new Row { Code = b.Code, Name = b.FileName, Broken = b });
                 foreach (OnlineLanguage o in online)
                 {
-                    Row? r = rows.FirstOrDefault(x => x.Code == o.Code);
+                    Row? r = rows.FirstOrDefault(x => x.Code == o.Code && x.Broken is null);
                     if (r is null) rows.Add(new Row { Code = o.Code, Name = o.Name, Online = o });
                     else if (!r.BuiltIn) r.Online = o;
                 }
@@ -214,7 +251,7 @@ internal static class LanguageDialog
         if (result != DialogResult.OK) return null;
 
         var errors = new List<string>();
-        foreach (Row r in rows.Where(r => !r.BuiltIn))
+        foreach (Row r in rows.Where(r => !r.BuiltIn && r.Broken is null))
         {
             try
             {
@@ -226,7 +263,7 @@ internal static class LanguageDialog
         if (errors.Count > 0)
             MessageBox.Show(owner, string.Join("\n", errors), Loc.T("Sprachen", "Languages"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
-        Row? chosen = rows.FirstOrDefault(r => r.Code == active);
+        Row? chosen = rows.FirstOrDefault(r => r.Code == active && r.Broken is null);
         bool available = chosen is not null && (chosen.BuiltIn || Languages.Load(chosen.Code) is not null);
         return available ? active : Loc.Language;
     }

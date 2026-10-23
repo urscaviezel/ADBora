@@ -186,11 +186,12 @@ Deutsch und Englisch sind eingebaut. *Allgemeine Einstellungen › Sprache ände
 (Ordner [`lang`](lang)) installieren bzw. aktualisieren, kein Haken = entfernen. Heruntergeladene
 Sprachen liegen im Datenordner unter `lang\` – ohne neue ADBora-Version.
 
-**Neue Sprache beitragen:** [`lang/template.json`](lang/template.json) kopieren, die Texte rechts
-übersetzen (`{0}`, `{1}` … und `\n` beibehalten), `_meta` ausfüllen und als `lang/<code>.json`
-(z. B. `fr.json`) speichern – Pull Requests willkommen. Zum Testen die Datei in den Sprachordner legen
-(Knopf „Sprachordner öffnen“). Fehlende Texte erscheinen auf Englisch. `lang/_reference-de.json` zeigt
-zu jedem englischen Text das deutsche Original. Die Vorlage erzeugt `tools/LangExtract` aus dem Quellcode.
+Verfügbar: Französisch, Italienisch, Spanisch, Portugiesisch, Russisch, Koreanisch, Chinesisch
+(vereinfacht) – KI-Übersetzungen, Korrekturen von Muttersprachlern willkommen.
+
+**Sprache beitragen oder korrigieren:** siehe [`lang/TRANSLATING.md`](lang/TRANSLATING.md) – Regeln,
+Vorlage `lang/template.json`, fertiger Auftrag für KI-Übersetzer. Die Spalte „Übersetzt“ im Sprachfenster
+zeigt, ob eine Datei vollständig und technisch korrekt ist.
 
 ### Build
 
@@ -380,11 +381,12 @@ language dialog: circle = active language, tick = install / update a further lan
 repository (folder [`lang`](lang)), no tick = remove. Downloaded languages are stored in the data folder
 under `lang\` – no new ADBora version needed.
 
-**Contribute a language:** copy [`lang/template.json`](lang/template.json), translate the texts on the
-right (keep `{0}`, `{1}` … and `\n`), fill in `_meta` and save it as `lang/<code>.json` (e.g. `fr.json`)
-– pull requests welcome. To test it, put the file into the language folder (button "Open language
-folder"). Missing texts appear in English. `lang/_reference-de.json` shows the German original of every
-English text. The template is generated from the source code by `tools/LangExtract`.
+Available: French, Italian, Spanish, Portuguese, Russian, Korean, Chinese (Simplified) – AI
+translations, corrections by native speakers welcome.
+
+**Contribute or correct a language:** see [`lang/TRANSLATING.md`](lang/TRANSLATING.md) – rules, template
+`lang/template.json`, ready-made prompt for AI translators. The "Translated" column in the language dialog
+shows whether a file is complete and technically correct.
 
 ### Build
 

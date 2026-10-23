@@ -331,7 +331,31 @@ internal sealed class TabStrip : Control
             }
             if (x <= Width) break;
         }
+        // Still too wide (long translations): cap the widest tabs only, their texts end with "…"
+        int right = _bounds.Count > 0 ? _bounds[^1].Right : 0;
+        if (right > Width && _bounds.Count > 0)
+        {
+            int start = _bounds[0].X, gap = Theme.S(2);
+            int available = Width - start - gap * (_bounds.Count - 1) - Theme.S(4);
+            int[] widths = _bounds.Select(b => b.Width).ToArray();
+            int lo = Theme.S(40), hi = widths.Max();
+            while (lo < hi)   // largest cap that still fits
+            {
+                int mid = (lo + hi + 1) / 2;
+                if (widths.Sum(w => Math.Min(w, mid)) <= available) lo = mid; else hi = mid - 1;
+            }
+            int x = start;
+            for (int i = 0; i < _bounds.Count; i++)
+            {
+                int w = Math.Min(widths[i], lo);
+                _bounds[i] = new Rectangle(x, _bounds[i].Y, w, _bounds[i].Height);
+                x += w + gap;
+            }
+        }
     }
+
+    private readonly ToolTip _tip = new();
+    private int _tipIndex = -1;
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -371,13 +395,22 @@ internal sealed class TabStrip : Control
                 ? new Rectangle(r.X + Theme.S(10), r.Y, r.Width - Theme.S(12), r.Height)
                 : new Rectangle(r.X + Theme.S(40), r.Y, r.Width - Theme.S(44), r.Height);
             TextRenderer.DrawText(g, Loc.T(_tabs[i].De, _tabs[i].En), Font, textRect, color,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         int hover = _bounds.FindIndex(r => r.Contains(e.Location));
+        if (hover != _tipIndex)
+        {
+            // Full tab name as tooltip when it is shortened
+            _tipIndex = hover;
+            if (hover >= 0 && _compact)
+                _tip.SetToolTip(this, Loc.T(_tabs[hover].De, _tabs[hover].En));
+            else
+                _tip.SetToolTip(this, null);
+        }
         if (hover != _hover)
         {
             _hover = hover;

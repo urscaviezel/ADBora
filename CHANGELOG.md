@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.5.5 – 2026-10-23
+
+- DE: Neue Sprachen: Italienisch, Spanisch, Portugiesisch, Russisch, Koreanisch und Chinesisch (vereinfacht)
+  zum Download (KI-Übersetzungen, Korrekturen von Muttersprachlern willkommen); Anleitung für Übersetzer
+  in `lang/TRANSLATING.md`.
+- DE: Sprachfenster: Spalte „Übersetzt“ zeigt Vollständigkeit und Platzhalter-Fehler jeder Sprachdatei;
+  defekte Dateien erscheinen rot mit Grund (z. B. JSON-Fehler mit Zeile). Sprachdateien werden toleranter
+  gelesen (Text vor/nach dem JSON, Kommentare, fehlender `_meta`-Block).
+- DE: Reiterleiste: zu lange Reiternamen (Übersetzungen) werden gekürzt statt abgeschnitten, voller Name
+  als Tooltip.
+- EN: New languages: Italian, Spanish, Portuguese, Russian, Korean and Chinese (Simplified) for download
+  (AI translations, corrections by native speakers welcome); translator guide in `lang/TRANSLATING.md`.
+- EN: Language dialog: "Translated" column shows completeness and placeholder errors of each language file;
+  broken files appear in red with the reason (e.g. JSON error with line). Language files are read more
+  tolerantly (text before/after the JSON, comments, missing `_meta` block).
+- EN: Tab bar: tab names that are too long (translations) are shortened instead of cut off, full name as
+  tooltip.
+
 ## v1.5.4 – 2026-10-23
 
 - DE: Performance: Die Schaltflächen sind in zwei Gruppen (Messung / Anzeige + HUD) angeordnet, die bei
