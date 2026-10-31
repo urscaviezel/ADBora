@@ -18,6 +18,9 @@ internal sealed class MetadataCache
     private readonly string _serial;
     private readonly string _user;
 
+    /// <summary>Version of the icon reader; entries without icon from an older reader are read again (e.g. vector icons since 2).</summary>
+    public const int ReaderVersion = 2;
+
     public static string DefaultRoot => Path.Combine(AppSettings.DataDirectory, "metadata-cache");
 
     public static string LegacyRoot => Path.Combine(
@@ -87,6 +90,9 @@ internal sealed class MetadataCache
             byte[] iconBytes = Convert.FromBase64String(icon);
             if (iconBytes.Length > 5 * 1024 * 1024)
                 return false;
+            int reader = data["reader"] is JsonValue rv && rv.TryGetValue(out int r) ? r : 1;
+            if (iconBytes.Length == 0 && reader < ReaderVersion)
+                return false;   // a newer reader may find the icon now
 
             app.Name = name.Trim().Length > 0 ? name.Trim() : app.Package;
             app.Version = version;
@@ -114,7 +120,8 @@ internal sealed class MetadataCache
             ["name"] = app.Name,
             ["version"] = app.Version,
             ["version_code"] = app.VersionCode,
-            ["icon"] = Convert.ToBase64String(app.Icon)
+            ["icon"] = Convert.ToBase64String(app.Icon),
+            ["reader"] = ReaderVersion
         };
 
         Directory.CreateDirectory(_root);

@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.6 – 2026-10-31
+
+- DE: App-Icons: Vektor-Icons (XML, auch als Ebene adaptiver Icons) werden jetzt dargestellt, z. B. bei
+  PFD-Metrics, Lucid oder Prime Video. Apps ohne Icon aus früheren Scans werden einmal neu eingelesen.
+- DE: Nach einem erneuten Einlesen zeigt die Liste geänderte Icons sofort (z. B. nach einem Update oder
+  erneuten Patchen einer App) statt des alten Icons aus der laufenden Sitzung.
+- EN: App icons: vector icons (XML, also as layer of adaptive icons) are now rendered, e.g. PFD-Metrics,
+  Lucid or Prime Video. Apps without icon from earlier scans are read once more.
+- EN: After scanning again, the list shows changed icons right away (e.g. after an update or re-patching an
+  app) instead of the old icon from the running session.
+
 ## v1.5.5 – 2026-10-23
 
 - DE: Neue Sprachen: Italienisch, Spanisch, Portugiesisch, Russisch, Koreanisch und Chinesisch (vereinfacht)

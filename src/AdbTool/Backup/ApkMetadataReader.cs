@@ -182,7 +182,7 @@ internal static class ApkMetadataReader
         {
             byte[]? xml = ReadEntry(zip, file.Path);
             if (xml is null) continue;
-            byte[]? composed = ComposeAdaptiveIcon(zip, table, xml);
+            byte[]? composed = ComposeAdaptiveIcon(zip, table, xml) ?? DrawableRenderer.RenderIconPng(zip, table, xml);
             if (composed is not null)
                 return composed;
         }

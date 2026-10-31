@@ -612,6 +612,7 @@ internal sealed class BackupPage : UserControl, IPage
         try
         {
             List<AppEntry> apps = await Task.Run(() => service.ScanAsync(resolveNames: true));
+            _icons.Clear();   // icons may have changed (re-patched / updated apps)
             _apps = Sorted(apps);
             _scannedSerial = device.Serial;
             Populate();
