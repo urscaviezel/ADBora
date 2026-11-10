@@ -1,14 +1,17 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using AdbTool.Backup;
+using AdbTool.Cast;
 using AdbTool.Core;
 using AdbTool.UI;
 
 namespace AdbTool.Tabs;
 
 /// <summary>
-/// Tab "Stream": mirrors the headset display to the PC with scrcpy (separate
-/// window), optional recording, screenshot and audio/microphone forwarding.
+/// Tab "Stream": two modes. "Headset casting" shows the undistorted casting picture of
+/// a Meta Quest or Play For Dream in an ADBora window (see AdbTool.Cast). "scrcpy" mirrors
+/// the raw display of any Android device (separate scrcpy window) with view, crop,
+/// recording, screenshot and audio/microphone forwarding.
 /// </summary>
 internal sealed class StreamPage : UserControl, IPage
 {
@@ -70,6 +73,28 @@ internal sealed class StreamPage : UserControl, IPage
     private readonly Label _status = Ui.Value("");
     private readonly TextBox _log = Ui.Console();
 
+    // --- mode / headset casting
+    private readonly RadioButton _modeCast = Ui.Radio("Headset-Casting (Meta Quest, Play For Dream)", "Headset casting (Meta Quest, Play For Dream)");
+    private readonly RadioButton _modeScrcpy = Ui.Radio("scrcpy (alle Android-Geräte)", "scrcpy (all Android devices)");
+    private readonly Label _modeHint = Ui.Label("", "", muted: true);
+    private readonly RadioButton _hmdQuest = Ui.Radio("Meta Quest", "Meta Quest");
+    private readonly RadioButton _hmdPfd = Ui.Radio("Play For Dream MR", "Play For Dream MR");
+    private readonly Label _castInfo = Ui.Label("", "", muted: true);
+    private readonly CheckBox _castProximity = Ui.CheckBox("Headset während des Streams wach halten", "Keep the headset awake while streaming");
+    private readonly CheckBox _castAudio = Ui.CheckBox("Ton des Headsets am PC abspielen", "Play the headset audio on the PC");
+    private static readonly int[] VolumeValues = Enumerable.Range(0, 21).Select(i => i * 10).ToArray(); // 0 … 200 %
+    private readonly DarkComboBox _castVolume = Ui.Combo(100);
+    private bool _volumeLoading;
+    private readonly CheckBox _castMic = Ui.CheckBox("Mikrofon des Headsets einbeziehen", "Include the headset microphone");
+    private readonly CheckBox _castOnTop = Ui.CheckBox("Stream-Fenster immer im Vordergrund", "Stream window always on top");
+    private readonly CheckBox _castRecord = Ui.CheckBox("Stream mit Ton aufnehmen (MKV)", "Record the stream with audio (MKV)");
+    private Card _optCard = null!, _castCard = null!;
+    private Label _beta = null!, _toolHint = null!;
+    private CastSession? _cast;
+    private CastKind _detected = CastKind.None;
+    private string? _detectedSerial;
+    private bool _castStarting;
+
     private string? _scrcpy;
     private Process? _process;
     private string? _recordFile;
@@ -90,13 +115,14 @@ internal sealed class StreamPage : UserControl, IPage
         _scrcpy = ScrcpyTool.Find(_state.Settings.ScrcpyPath);
         _ = ShowScrcpyAsync();
 
-        _state.SelectedDeviceChanged += () => { _displaySerial = null; UpdateEnabled(); _ = DetectDisplayAsync(); };
+        _state.SelectedDeviceChanged += () => { _displaySerial = null; UpdateEnabled(); _ = DetectDisplayAsync(); _ = DetectCastAsync(); };
         _state.AdbChanged += UpdateEnabled;
         _state.BusyChanged += UpdateEnabled;
-        Loc.LanguageChanged += () => { FillCombos(); UpdateEnabled(); _ = ShowScrcpyAsync(); };
+        Loc.LanguageChanged += () => { FillCombos(); ApplyMode(); _ = ShowScrcpyAsync(); };
         HandleDestroyed += (_, _) =>
         {
             StopStream(wait: false);
+            _ = _cast?.StopAsync();
             // App is closing: restore the display timeout synchronously
             if (_timeoutOld is { } old && _timeoutSerial is not null && _state.HasAdb)
             {
@@ -118,17 +144,17 @@ internal sealed class StreamPage : UserControl, IPage
         var toolCard = new Card("scrcpy", "scrcpy") { Dock = DockStyle.Top };
         var toolBox = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Top };
         toolBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var toolHint = Ui.Label(
-            "Das Streaming nutzt scrcpy (Open Source, Apache-2.0). Es braucht keine App auf dem Headset und läuft über USB oder WLAN-ADB. scrcpy wird nicht mitgeliefert, sondern einmalig von GitHub geladen.",
-            "Streaming uses scrcpy (open source, Apache-2.0). It needs no app on the headset and works via USB or Wi-Fi ADB. scrcpy is not bundled but downloaded once from GitHub.", muted: true);
+        var toolHint = _toolHint = Ui.Label(
+            "Das Streaming nutzt scrcpy (Open Source, Apache-2.0); das Headset-Casting verwendet die darin enthaltenen FFmpeg-Bibliotheken zum Dekodieren. Es braucht keine App auf dem Headset und läuft über USB oder WLAN-ADB. scrcpy wird nicht mitgeliefert, sondern einmalig von GitHub geladen.",
+            "Streaming uses scrcpy (open source, Apache-2.0); headset casting uses the FFmpeg libraries included with it for decoding. It needs no app on the headset and works via USB or Wi-Fi ADB. scrcpy is not bundled but downloaded once from GitHub.", muted: true);
         toolHint.Margin = new Padding(0, 0, 0, 6);
         Ui.WrapTo(toolHint, this, 40);
         Ui.WrapTo(_scrcpyStatus, this, 40);
         _download.Click += async (_, _) => await DownloadAsync();
         _choose.Click += (_, _) => ChooseScrcpy();
-        var beta = Ui.Label(
-            "Experimentell: Das Streaming zeigt das rohe Display des Headsets (je nach Gerät verzerrt, schief oder als Raster). Ausschnitt, Drehung und Feinabstimmung helfen; ein entzerrtes Breitbild wie beim offiziellen Casting ist damit nicht möglich.",
-            "Experimental: streaming shows the raw headset display (depending on the device distorted, tilted or as a grid). View, rotation and fine tuning help; an undistorted wide picture like official casting is not possible this way.");
+        var beta = _beta = Ui.Label(
+            "scrcpy zeigt das rohe Display des Geräts. Bei VR-Headsets ist das Bild je nach Gerät verzerrt, schief oder als Raster – Ausschnitt, Drehung und Feinabstimmung helfen. Für Meta Quest und Play For Dream gibt es oben das entzerrte „Headset-Casting“.",
+            "scrcpy shows the raw display of the device. On VR headsets the picture is distorted, tilted or a grid depending on the device – view, rotation and fine tuning help. For Meta Quest and Play For Dream use the undistorted \"Headset casting\" above.");
         beta.ForeColor = Theme.Warning;
         beta.Margin = new Padding(0, 0, 0, 8);
         Ui.WrapTo(beta, this, 40);
@@ -141,7 +167,7 @@ internal sealed class StreamPage : UserControl, IPage
         toolCard.SetContent(toolBox);
 
         // --- options ------------------------------------------------------------
-        var optCard = new Card("Stream-Einstellungen", "Stream settings") { Dock = DockStyle.Top };
+        var optCard = _optCard = new Card("scrcpy-Einstellungen", "scrcpy settings") { Dock = DockStyle.Top };
         var grid = Ui.Grid(2);
         FillCombos();
         _quality.SelectedIndex = Math.Clamp(_state.Settings.StreamQuality, 0, Qualities.Length - 1);
@@ -232,16 +258,21 @@ internal sealed class StreamPage : UserControl, IPage
         actions.SetColumnSpan(_status, 6);
 
         var logCard = new Card("Protokoll", "Log") { Dock = DockStyle.Top, Height = 200 };
-        Ui.Placeholder(_log, "Hier erscheinen die Meldungen von scrcpy.", "Messages from scrcpy appear here.");
+        Ui.Placeholder(_log, "Hier erscheinen die Meldungen des Streams.", "Messages of the stream appear here.");
         logCard.SetContent(_log, fill: true);
 
+        BuildCastUi();
         Controls.Add(logCard);
         Controls.Add(Spacer());
         Controls.Add(actions);
         Controls.Add(Spacer());
         Controls.Add(optCard);
+        Controls.Add(_castCard);
         Controls.Add(Spacer());
         Controls.Add(toolCard);
+        Controls.Add(Spacer());
+        Controls.Add(BuildModeCard());
+        ApplyMode();
     }
 
     private static Panel Spacer() => new() { Dock = DockStyle.Top, Height = 12, BackColor = Color.Transparent };
@@ -276,23 +307,26 @@ internal sealed class StreamPage : UserControl, IPage
     {
         UpdateEnabled();
         _ = DetectDisplayAsync();
+        _ = DetectCastAsync();
     }
 
     public void CancelOperation() => StopStream(wait: true);
 
-    private bool Streaming => _process is { HasExited: false };
+    private bool Streaming => _process is { HasExited: false } || _cast is not null || _castStarting;
 
     private void UpdateEnabled()
     {
         if (InvokeRequired) { BeginInvoke(new Action(UpdateEnabled)); return; }
         bool ready = _state.HasAdb && _state.SelectedDevice is { IsReady: true };
         bool streaming = Streaming;
-        _start.Enabled = ready && _scrcpy is not null && !streaming && !_downloading;
+        _start.Enabled = ready && _scrcpy is not null && !streaming && !_downloading && (!_modeCast.Checked || SelectedCastKind != CastKind.None);
         _stop.Enabled = streaming;
         _screenshot.Enabled = ready && !_state.IsBusy;
         _download.Enabled = _choose.Enabled = !_downloading && !streaming;
         _listDisplays.Enabled = ready && !streaming;
         _displayCombo.Enabled = !streaming;
+        foreach (Control c in new Control[] { _modeCast, _modeScrcpy, _hmdQuest, _hmdPfd, _castProximity, _castOnTop, _castRecord })
+            c.Enabled = !streaming;
         foreach (Control c in new Control[] { _view, _rotation, _zoom, _offX, _offY, _angle, _resetFine, _displayCombo, _quality, _fps, _audio, _control, _onTop, _proximity, _record, _folder, _browse, _shotFolder, _shotBrowse })
             c.Enabled = !streaming;
         _proximity.Text = IsQuest
@@ -307,7 +341,9 @@ internal sealed class StreamPage : UserControl, IPage
                     ? Loc.T("Kein bereites Gerät ausgewählt.", "No ready device selected.")
                     : _scrcpy is null
                         ? Loc.T("scrcpy fehlt – oben „scrcpy herunterladen“ klicken.", "scrcpy is missing – click \"Download scrcpy\" above.")
-                        : Loc.T($"Bereit: {d.DisplayName} ({d.Serial})", $"Ready: {d.DisplayName} ({d.Serial})");
+                        : _modeCast.Checked && SelectedCastKind == CastKind.None
+                            ? Loc.T("Headset auswählen (Meta Quest oder Play For Dream) oder zu „scrcpy“ wechseln.", "Choose the headset (Meta Quest or Play For Dream) or switch to \"scrcpy\".")
+                            : Loc.T($"Bereit: {d.DisplayName} ({d.Serial})", $"Ready: {d.DisplayName} ({d.Serial})");
         }
     }
 
@@ -549,6 +585,7 @@ internal sealed class StreamPage : UserControl, IPage
 
     private async Task StartStreamAsync()
     {
+        if (_modeCast.Checked) { await StartCastAsync(); return; }
         AdbDevice? device = _state.SelectedDevice;
         if (_scrcpy is null || device is not { IsReady: true } || Streaming) return;
         await DetectDisplayAsync();
@@ -600,26 +637,7 @@ internal sealed class StreamPage : UserControl, IPage
             }
         }
 
-        var adb = new AdbClient(_state.AdbPath!, device.Serial);
-        if (_proximity.Checked && IsQuest)
-        {
-            await adb.CaptureAsync(CancellationToken.None, "shell", "am broadcast -a com.oculus.vrpowermanager.prox_close");
-            _proximityApplied = true;
-            _proximitySerial = device.Serial;
-        }
-        else if (_proximity.Checked)
-        {
-            // Other headsets: keep the display on longer (restored after the stream)
-            AdbResult old = await adb.CaptureAsync(CancellationToken.None, "shell", "settings get system screen_off_timeout");
-            string value = old.Output.Trim();
-            if (old.Ok && Regex.IsMatch(value, @"^\d+$") && value != "3600000")
-            {
-                _timeoutOld = value;
-                _timeoutSerial = device.Serial;
-                await adb.CaptureAsync(CancellationToken.None, "shell", "settings put system screen_off_timeout 3600000");
-                Log(Loc.T($"Display-Timeout auf 1 Stunde gesetzt (vorher {int.Parse(value) / 1000} s).", $"Display timeout set to 1 hour (before {int.Parse(value) / 1000} s)."));
-            }
-        }
+        if (_proximity.Checked) await KeepAwakeAsync(device);
 
         var psi = new ProcessStartInfo(_scrcpy)
         {
@@ -654,6 +672,31 @@ internal sealed class StreamPage : UserControl, IPage
             await RestoreProximityAsync();
         }
         UpdateEnabled();
+    }
+
+    /// <summary>Quest: proximity sensor off; other devices: display timeout 1 hour (both restored afterwards).</summary>
+    private async Task KeepAwakeAsync(AdbDevice device)
+    {
+        var adb = new AdbClient(_state.AdbPath!, device.Serial);
+        if (IsQuest)
+        {
+            await adb.CaptureAsync(CancellationToken.None, "shell", "am broadcast -a com.oculus.vrpowermanager.prox_close");
+            _proximityApplied = true;
+            _proximitySerial = device.Serial;
+        }
+        else
+        {
+            // Other headsets: keep the display on longer (restored after the stream)
+            AdbResult old = await adb.CaptureAsync(CancellationToken.None, "shell", "settings get system screen_off_timeout");
+            string value = old.Output.Trim();
+            if (old.Ok && Regex.IsMatch(value, @"^\d+$") && value != "3600000")
+            {
+                _timeoutOld = value;
+                _timeoutSerial = device.Serial;
+                await adb.CaptureAsync(CancellationToken.None, "shell", "settings put system screen_off_timeout 3600000");
+                Log(Loc.T($"Display-Timeout auf 1 Stunde gesetzt (vorher {int.Parse(value) / 1000} s).", $"Display timeout set to 1 hour (before {int.Parse(value) / 1000} s)."));
+            }
+        }
     }
 
     private async void OnStreamExited(Process p)
@@ -698,6 +741,7 @@ internal sealed class StreamPage : UserControl, IPage
     /// <summary>Closes the scrcpy window (so a recording is finalized properly), kills it if needed.</summary>
     private void StopStream(bool wait)
     {
+        if (_cast is not null) { _ = StopCastAsync(); return; }
         Process? p = _process;
         if (p is null) return;
         try
@@ -711,6 +755,236 @@ internal sealed class StreamPage : UserControl, IPage
             }
         }
         catch { }
+    }
+
+    // ------------------------------------------------------------------
+    // Mode switch and headset casting
+    // ------------------------------------------------------------------
+
+    private Control BuildModeCard()
+    {
+        var card = new Card("Modus", "Mode") { Dock = DockStyle.Top };
+        var box = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Top };
+        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var row = Ui.Row(_modeCast, _modeScrcpy);
+        row.WrapContents = true;
+        box.Controls.Add(row);
+        _modeHint.Margin = new Padding(0, 4, 0, 0);
+        Ui.WrapTo(_modeHint, this, 40);
+        box.Controls.Add(_modeHint);
+        card.SetContent(box);
+        _modeCast.Checked = true;
+        _modeCast.CheckedChanged += (_, _) => { if (_modeCast.Checked) ApplyMode(); };
+        _modeScrcpy.CheckedChanged += (_, _) => { if (_modeScrcpy.Checked) ApplyMode(); };
+        return card;
+    }
+
+    private void BuildCastUi()
+    {
+        _castCard = new Card("Headset-Casting", "Headset casting") { Dock = DockStyle.Top };
+        var grid = Ui.Grid(2);
+        var hmds = Ui.Row(_hmdQuest, _hmdPfd);
+        hmds.WrapContents = true;
+        Ui.AddRow(grid, Ui.Label("Headset", "Headset", muted: true), hmds);
+        _castInfo.Margin = new Padding(0, 2, 0, 8);
+        Ui.WrapTo(_castInfo, this, 200);
+        Ui.AddRow(grid, new Label { Width = 1 }, _castInfo);
+        _castProximity.Checked = true;
+        _castOnTop.Checked = _state.Settings.StreamOnTop;
+        _castRecord.Checked = _state.Settings.StreamRecord;
+        _castOnTop.CheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _castOnTop.Checked; _onTop.Checked = _castOnTop.Checked; _state.Settings.Save(); };
+        _castRecord.CheckedChanged += (_, _) => { _state.Settings.StreamRecord = _castRecord.Checked; _record.Checked = _castRecord.Checked; _state.Settings.Save(); };
+        _castAudio.Checked = _state.Settings.CastAudio;
+        _castAudio.CheckedChanged += (_, _) =>
+        {
+            _state.Settings.CastAudio = _castAudio.Checked;
+            _state.Settings.Save();
+            if (_cast is not null) _cast.Muted = !_castAudio.Checked;
+        };
+        foreach (int v in VolumeValues) _castVolume.Items.Add($"{v} %");
+        _castVolume.SelectedIndexChanged += (_, _) =>
+        {
+            if (_volumeLoading || _castVolume.SelectedIndex < 0) return;
+            int v = VolumeValues[_castVolume.SelectedIndex];
+            if (SelectedCastKind == CastKind.PlayForDream) _state.Settings.CastVolumePfd = v; else _state.Settings.CastVolumeQuest = v;
+            _state.Settings.Save();
+            if (_cast is not null) _cast.Volume = v;
+        };
+        LoadVolume();
+        var audioRow = Ui.Row(_castAudio, Ui.Label("Lautstärke", "Volume", muted: true), _castVolume);
+        audioRow.WrapContents = true;
+        Ui.AddRow(grid, new Label { Width = 1 }, audioRow);
+        _castMic.Checked = _state.Settings.CastMic;
+        _castMic.CheckedChanged += async (_, _) =>
+        {
+            _state.Settings.CastMic = _castMic.Checked;
+            _state.Settings.Save();
+            if (_cast is not null) await ApplyMicAsync(_cast);
+        };
+        var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; das Casting der Hersteller schickt das Mikrofon nicht mit.",
+                               "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.", muted: true);
+        Ui.WrapTo(micHint, this, 200);
+        Ui.AddRow(grid, new Label { Width = 1 }, _castMic);
+        Ui.AddRow(grid, new Label { Width = 1 }, micHint);
+        Ui.AddRow(grid, new Label { Width = 1 }, _castProximity);
+        Ui.AddRow(grid, new Label { Width = 1 }, _castOnTop);
+        Ui.AddRow(grid, new Label { Width = 1 }, _castRecord);
+        var keys = Ui.Label("Im Stream-Fenster: Doppelklick oder F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot, M = Ton ein/aus, + / − = Lautstärke.",
+                            "In the stream window: double-click or F11 = full screen, Esc = leave full screen, F12 = screenshot, M = audio on/off, + / − = volume.", muted: true);
+        Ui.WrapTo(keys, this, 200);
+        Ui.AddRow(grid, new Label { Width = 1 }, keys);
+        _castCard.SetContent(grid);
+        _hmdQuest.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+        _hmdPfd.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+    }
+
+    /// <summary>Volume of the selected headset (saved separately for Quest and PFD).</summary>
+    private void LoadVolume()
+    {
+        int v = SelectedCastKind == CastKind.PlayForDream ? _state.Settings.CastVolumePfd : _state.Settings.CastVolumeQuest;
+        _volumeLoading = true;
+        _castVolume.SelectedIndex = Math.Max(0, Array.IndexOf(VolumeValues, Math.Clamp(v / 10 * 10, 0, 200)));
+        _volumeLoading = false;
+    }
+
+    private CastKind SelectedCastKind => _hmdQuest.Checked ? CastKind.Quest : _hmdPfd.Checked ? CastKind.PlayForDream : CastKind.None;
+
+    private void ApplyMode()
+    {
+        if (_castCard is null) return;
+        bool cast = _modeCast.Checked;
+        _castCard.Visible = cast;
+        _optCard.Visible = !cast;
+        _beta.Visible = !cast;
+        _modeHint.Text = cast
+            ? Loc.T("Entzerrtes Bild wie beim offiziellen Casting, direkt über das USB-Kabel (oder WLAN-ADB) – ohne Browser, Handy-App oder Meta-Konto.",
+                    "Undistorted picture like official casting, directly over the USB cable (or Wi-Fi ADB) – no browser, phone app or Meta account.")
+            : Loc.T("Spiegelt das rohe Display beliebiger Android-Geräte mit scrcpy (eigenes Fenster, Steuerung mit Maus/Tastatur, Ton, MP4-Aufnahme).",
+                    "Mirrors the raw display of any Android device with scrcpy (own window, mouse/keyboard control, audio, MP4 recording).");
+        ShowCastInfo();
+    }
+
+    private void ShowCastInfo()
+    {
+        if (IsDisposed) return;
+        string auto = _detected != CastKind.None && SelectedCastKind == _detected ? Loc.T(" (automatisch erkannt)", " (detected automatically)") : "";
+        _castInfo.Text = SelectedCastKind switch
+        {
+            CastKind.Quest => Loc.T("Meta Quest: nutzt den Casting-Dienst der Quest (wie der Meta Quest Developer Hub), ca. 2064 × 1440 bei 30 fps. Ein laufendes Casting zu Handy, Browser oder SideQuest vorher beenden.",
+                                    "Meta Quest: uses the Quest's casting service (like the Meta Quest Developer Hub), about 2064 × 1440 at 30 fps. Stop any casting to phone, browser or SideQuest first.") + auto,
+            CastKind.PlayForDream => Loc.T("Play For Dream: nutzt den eingebauten Casting-Dienst der PFD (Einzelauge, 1280 × 720 bei ca. 24 fps). Miracast zum TV vorher beenden.",
+                                           "Play For Dream: uses the built-in PFD casting service (single eye, 1280 × 720 at about 24 fps). Stop Miracast to a TV first.") + auto,
+            _ => Loc.T("Für andere Geräte „scrcpy“ verwenden.", "Use \"scrcpy\" for other devices.")
+        };
+        UpdateEnabled();
+    }
+
+    /// <summary>Selects headset and mode automatically for the selected device.</summary>
+    private async Task DetectCastAsync()
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        if (device is not { IsReady: true } || !_state.HasAdb || Streaming) return;
+        if (_detectedSerial == device.Serial) return;
+        CastKind kind = await CastSource.DetectAsync(_state.AdbPath!, device);
+        if (IsDisposed || _state.SelectedDevice?.Serial != device.Serial || Streaming) return;
+        _detectedSerial = device.Serial;
+        _detected = kind;
+        if (kind == CastKind.Quest) _hmdQuest.Checked = true;
+        else if (kind == CastKind.PlayForDream) _hmdPfd.Checked = true;
+        if (kind != CastKind.None) _modeCast.Checked = true; else _modeScrcpy.Checked = true;
+        ApplyMode();
+    }
+
+    private async Task StartCastAsync()
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        CastKind kind = SelectedCastKind;
+        if (_scrcpy is null || device is not { IsReady: true } || Streaming || kind == CastKind.None) return;
+        _castStarting = true;
+        UpdateEnabled();
+        string? record = null;
+        if (_castRecord.Checked)
+        {
+            try
+            {
+                Directory.CreateDirectory(Folder);
+                record = Path.Combine(Folder, $"ADBora_{BackupService.SafeName(device.DisplayName, 40)}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.dat");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(FindForm(), Loc.T("Zielordner ungültig: ", "Invalid folder: ") + ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _castStarting = false;
+                UpdateEnabled();
+                return;
+            }
+        }
+        if (_castProximity.Checked) await KeepAwakeAsync(device);
+
+        var session = new CastSession(kind, _state.AdbPath!, device.Serial, Path.GetDirectoryName(_scrcpy)!);
+        session.Log += Log;
+        session.ScreenshotRequested += () => BeginInvoke(new Action(() => _ = ScreenshotAsync()));
+        session.MuteToggleRequested += () => BeginInvoke(new Action(() => _castAudio.Checked = !_castAudio.Checked));
+        session.VolumeStepRequested += d => BeginInvoke(new Action(() =>
+            _castVolume.SelectedIndex = Math.Clamp(_castVolume.SelectedIndex + d, 0, VolumeValues.Length - 1)));
+        session.Volume = VolumeValues[Math.Max(0, _castVolume.SelectedIndex)];
+        session.Ended += reason => BeginInvoke(new Action(() => OnCastEnded(session, reason)));
+        _cast = session;
+        Log("");
+        Log(Loc.T($"Headset-Casting: {device.DisplayName} ({device.Serial})", $"Headset casting: {device.DisplayName} ({device.Serial})"));
+        try
+        {
+            await session.StartAsync($"ADBora Stream – {device.DisplayName}", _castOnTop.Checked, record, FindForm(), _castAudio.Checked);
+            if (_cast == session)
+            {
+                if (_castMic.Checked) await ApplyMicAsync(session);
+                _status.Text = Loc.T($"Stream läuft: {device.DisplayName}", $"Streaming: {device.DisplayName}") +
+                               (session.RecordFile is not null ? Loc.T(" · Aufnahme läuft", " · recording") : "");
+                Log(Loc.T("Bild wird empfangen.", "Receiving picture."));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log(Loc.T("Casting fehlgeschlagen: ", "Casting failed: ") + ex.Message);
+            if (_cast == session) _cast = null;
+            await RestoreProximityAsync();
+            if (!IsDisposed)
+                MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _castStarting = false;
+            UpdateEnabled();
+        }
+    }
+
+    /// <summary>Switches the headset microphone on or off according to the check box.</summary>
+    private async Task ApplyMicAsync(CastSession session)
+    {
+        try { await session.SetMicAsync(_castMic.Checked); }
+        catch (Exception ex)
+        {
+            Log(Loc.T("Mikrofon nicht verfügbar: ", "Microphone not available: ") + ex.Message);
+        }
+    }
+
+    private async Task StopCastAsync()
+    {
+        CastSession? s = _cast;
+        if (s is null) return;
+        await s.StopAsync();
+    }
+
+    private async void OnCastEnded(CastSession session, string? reason)
+    {
+        if (_cast != session) return;
+        _cast = null;
+        await session.StopAsync();
+        Log(reason ?? Loc.T("Stream beendet.", "Stream ended."));
+        if (session.RecordFile is { } f && File.Exists(f))
+            Log(Loc.T($"Aufnahme gespeichert: {f}", $"Recording saved: {f}"));
+        await RestoreProximityAsync();
+        _status.Text = reason ?? Loc.T("Stream beendet.", "Stream ended.");
+        UpdateEnabled();
     }
 
     // ------------------------------------------------------------------
@@ -742,7 +1016,12 @@ internal sealed class StreamPage : UserControl, IPage
             Directory.CreateDirectory(ShotFolder);
             string file = Path.Combine(ShotFolder, $"ADBora_{BackupService.SafeName(device.DisplayName, 40)}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png");
 
-            if (_process is { HasExited: false } p)
+            if (_cast is not null)
+            {
+                using Bitmap shot = _cast.Snapshot() ?? throw new InvalidOperationException(Loc.T("Noch kein Bild vorhanden.", "No picture yet."));
+                shot.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+            }
+            else if (_process is { HasExited: false } p)
             {
                 p.Refresh();
                 IntPtr hwnd = p.MainWindowHandle;

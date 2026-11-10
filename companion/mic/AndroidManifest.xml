@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ADBora Mic – companion app for ADBora (https://github.com/urscaviezel/ADBora).
+  Captures the headset microphone and provides it to ADBora over a local socket
+  ("adb forward tcp:N localabstract:adbora_mic"). No network permission, no UI.
+  Started by ADBora as an instrumentation (am instrument), stopped with am force-stop.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.adbora.mic">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:label="ADBora Mic"
+        android:allowBackup="false"
+        android:hasCode="true"
+        android:icon="@android:drawable/ic_btn_speak_now" />
+
+    <instrumentation
+        android:name=".MicInstrumentation"
+        android:targetPackage="com.adbora.mic"
+        android:label="ADBora Mic" />
+</manifest>

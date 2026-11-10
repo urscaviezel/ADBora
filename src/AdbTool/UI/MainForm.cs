@@ -35,6 +35,7 @@ internal sealed class MainForm : Form
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         _state = new AppState(AppSettings.Load());
+        FirstStartLanguage(smokeTest);
         Loc.SetLanguage(_state.Settings.Language);
 
         Text = $"ADBora {AppInfo.DisplayVersion}";
@@ -323,6 +324,32 @@ internal sealed class MainForm : Form
     }
 
     /// <summary>Closes ADBora without questions so that the update can replace it.</summary>
+    /// <summary>
+    /// First start in a language other than German/English (installer choice or Windows language): download
+    /// that language from GitHub if it is not there yet; without internet ADBora starts in English.
+    /// </summary>
+    private void FirstStartLanguage(bool smokeTest)
+    {
+        AppSettings settings = _state.Settings;
+        if (!settings.FirstStart) return;
+        string code = settings.Language;
+        if (code is not ("de" or "en") && Languages.Load(code) is null)
+        {
+            bool ok = false;
+            if (!smokeTest && Languages.IsValidCode(code))
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                    ok = Task.Run(() => Languages.DownloadAsync(code, cts.Token)).GetAwaiter().GetResult();
+                }
+                catch { ok = false; }
+            }
+            if (!ok) settings.Language = "en";
+        }
+        if (!smokeTest) settings.Save();
+    }
+
     private void ExitForUpdate()
     {
         foreach (IPage page in _pages.OfType<IPage>())

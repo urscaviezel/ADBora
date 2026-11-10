@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.5.7 – 2026-11-10
+
+- DE: Stream: neuer Modus **Headset-Casting** für Meta Quest und Play For Dream – entzerrtes Bild wie beim
+  offiziellen Casting, direkt über USB (oder WLAN-ADB) in einem ADBora-Fenster, mit deutlich weniger
+  Verzögerung als die Casting-Lösungen der Hersteller. Quest: Casting-Dienst der Quest (wie Meta Quest
+  Developer Hub), ca. 2064 × 1440 bei 30 fps. Play For Dream: eingebauter Casting-Dienst der PFD (Einzelauge,
+  1280 × 720). Headset und Modus werden automatisch gewählt; scrcpy bleibt als Modus für alle anderen
+  Android-Geräte erhalten.
+- DE: Headset-Casting: Ton des Headsets am PC (auch während des Streams ein-/ausschaltbar), Lautstärke pro
+  Headset, Mikrofon des Headsets über die neue Begleit-App „ADBora Mic“ (wird bei Bedarf automatisch
+  installiert, Open Source, ohne Netzwerkzugriff), Aufnahme als MKV mit Ton, Screenshot, Vollbild;
+  Tasten im Stream-Fenster: F11/Doppelklick, Esc, F12, M, + / −.
+- DE: Sprache beim ersten Start: ADBora übernimmt die im Installer gewählte Sprache bzw. (portabel) die
+  Windows-Anzeigesprache; ist es keine eingebaute Sprache, wird sie einmalig von GitHub geladen (ohne
+  Internet: Englisch).
+- DE: Installer: Sprachauswahl auch auf Französisch, Italienisch, Spanisch, Portugiesisch, Russisch und –
+  sofern Inno Setup sie mitbringt – Koreanisch und Chinesisch; vorausgewählt ist die Windows-Sprache.
+- EN: Stream: new **Headset casting** mode for Meta Quest and Play For Dream – undistorted picture like
+  official casting, directly over USB (or Wi-Fi ADB) in an ADBora window, with much less delay than the
+  manufacturers' casting. Quest: the Quest's casting service (like the Meta Quest Developer Hub), about
+  2064 × 1440 at 30 fps. Play For Dream: the PFD's built-in casting service (single eye, 1280 × 720).
+  Headset and mode are chosen automatically; scrcpy stays as mode for all other Android devices.
+- EN: Headset casting: headset audio on the PC (can be switched on/off while streaming), volume per headset,
+  headset microphone via the new companion app "ADBora Mic" (installed automatically when needed, open
+  source, no network access), MKV recording with audio, screenshot, full screen; keys in the stream window:
+  F11/double-click, Esc, F12, M, + / −.
+- EN: Language at the first start: ADBora uses the language chosen in the installer or (portable) the
+  Windows display language; if it is not built in, it is downloaded once from GitHub (no internet: English).
+- EN: Installer: language choice also in French, Italian, Spanish, Portuguese, Russian and – if Inno Setup
+  ships them – Korean and Chinese; the Windows language is preselected.
+
 ## v1.5.6 – 2026-10-31
 
 - DE: App-Icons: Vektor-Icons (XML, auch als Ebene adaptiver Icons) werden jetzt dargestellt, z. B. bei

@@ -67,6 +67,10 @@ internal sealed class AppSettings
     public bool StreamControl { get; set; }
     public bool StreamOnTop { get; set; }
     public bool StreamRecord { get; set; }
+    public bool CastAudio { get; set; } = true;
+    public int CastVolumeQuest { get; set; } = 100;
+    public int CastVolumePfd { get; set; } = 60;
+    public bool CastMic { get; set; }
     public string StreamFolder { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "ADBora");
     public string ScreenshotFolder { get; set; } =
@@ -114,6 +118,41 @@ internal sealed class AppSettings
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
+    /// <summary>True when no settings file existed yet (first start of ADBora).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool FirstStart { get; private set; }
+
+    /// <summary>
+    /// Language for the first start: the choice made in the installer ("ADBora.ini" next to the EXE,
+    /// [Setup] Language=xx), otherwise the Windows display language.
+    /// </summary>
+    public static string InitialLanguage()
+    {
+        try
+        {
+            string ini = Path.Combine(AppContext.BaseDirectory, "ADBora.ini");
+            if (File.Exists(ini))
+                foreach (string line in File.ReadAllLines(ini))
+                {
+                    string l = line.Trim();
+                    if (l.StartsWith("Language=", StringComparison.OrdinalIgnoreCase) && l.Length > 9)
+                        return l[9..].Trim().ToLowerInvariant();
+                }
+        }
+        catch { }
+        return FromCulture(System.Globalization.CultureInfo.CurrentUICulture);
+    }
+
+    /// <summary>Windows culture → ADBora language code (de, en, fr, zh-cn, zh-tw, pt …).</summary>
+    public static string FromCulture(System.Globalization.CultureInfo culture)
+    {
+        string name = culture.Name.ToLowerInvariant();
+        string two = culture.TwoLetterISOLanguageName.ToLowerInvariant();
+        if (two == "zh")
+            return name.Contains("hant") || name.EndsWith("-tw") || name.EndsWith("-hk") || name.EndsWith("-mo") ? "zh-tw" : "zh-cn";
+        return two is "" or "iv" ? "en" : two;
+    }
+
     public static AppSettings Load()
     {
         AppSettings settings;
@@ -132,6 +171,7 @@ internal sealed class AppSettings
 
         if (settings.SavedCommands.Count == 0 && fresh)
             settings.SavedCommands.AddRange(DefaultCommands());
+        settings.FirstStart = fresh;
 
         settings.Language = string.IsNullOrWhiteSpace(settings.Language) ? "de" : settings.Language.Trim().ToLowerInvariant();
         if (settings.SpeedPort is < 1 or > 65535) settings.SpeedPort = 5001;
@@ -162,7 +202,7 @@ internal sealed class AppSettings
     private static AppSettings NewWithMigration(out bool fresh)
     {
         fresh = true;
-        var settings = new AppSettings();
+        var settings = new AppSettings { Language = InitialLanguage() };
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
         try

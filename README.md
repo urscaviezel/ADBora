@@ -35,7 +35,7 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
 | **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
-| **5 · Stream (Beta)** | *Experimentell:* Headset-Bild live auf dem PC über scrcpy (USB oder WLAN), Display-, Ausschnitt-, Drehungs- und Neigungswahl mit Voreinstellungen für Quest 3 und Play For Dream, Ton/Mikrofon, MP4-Aufnahme, Screenshot |
+| **5 · Stream (Beta)** | **Headset-Casting** für Meta Quest und Play For Dream: entzerrtes Bild mit Ton und Mikrofon über USB, MKV-Aufnahme, Screenshot. Für alle anderen Android-Geräte **scrcpy** (rohes Display, Ausschnitt/Drehung, Ton, MP4-Aufnahme) |
 | **6 · Performance** | Leistungswerte live per ADB (FPS, Frame-Zeiten, CPU-/GPU-Last, Takt, Temperaturen, Akku, RAM …) für Play For Dream und Meta Quest, Auswahl der Werte und Graphen, CSV-Protokoll, HUD-App im Headset ein-/ausschalten bzw. installieren |
 | **7 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
 | **8 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
@@ -130,15 +130,39 @@ PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc (Gerät) → /dev/null
 Es wird nichts auf dem Gerät gespeichert. Der Wert ist der Durchsatz dieses
 ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
 
-### Stream (Beta, experimentell)
+### Stream (Beta)
+
+Zwei Modi, oben im Tab umschaltbar; ADBora wählt passend zum Gerät automatisch.
+
+**Headset-Casting (Meta Quest, Play For Dream)** – entzerrtes Bild wie beim offiziellen
+Casting, direkt über das USB-Kabel (oder WLAN-ADB) in einem ADBora-Fenster, ohne Browser,
+Handy-App oder Meta-Konto:
+
+- **Meta Quest:** ADBora startet den Casting-Dienst der Quest (gleicher Mechanismus wie der
+  Meta Quest Developer Hub) und empfängt das Video per `adb reverse`; ca. 2064 × 1440 bei
+  30 fps, Ton als PCM. Ein laufendes Casting zu Handy, Browser oder SideQuest vorher beenden.
+- **Play For Dream:** ADBora startet den eingebauten Casting-Dienst der PFD und liest dessen
+  Stream per `adb forward`; Einzelauge 1280 × 720, Ton als AAC. Miracast vorher beenden.
+  Geschützte Inhalte (DRM, Browser) zeigt die PFD auch hier nicht.
+- Ton des Headsets am PC (während des Streams ein-/ausschaltbar), Lautstärke pro Headset.
+- **Mikrofon:** Das Casting der Hersteller schickt das Mikrofon nicht mit. Dafür installiert
+  ADBora bei Bedarf die kleine Begleit-App **ADBora Mic** (`companion/mic`, Open Source,
+  ohne Netzwerkzugriff, kein Fenster); sie läuft nur während des Streams.
+- Aufnahme als **MKV** mit Ton und Mikrofon (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
+- Stream-Fenster: Doppelklick/F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot,
+  M = Ton ein/aus, + / − = Lautstärke.
+- Dekodiert wird mit den FFmpeg-Bibliotheken (LGPL) aus dem scrcpy-Paket.
+
+**scrcpy (alle Android-Geräte)**
 
 - Nutzt **scrcpy** (Open Source, Apache-2.0); wird beim ersten Mal per Knopfdruck von GitHub
   geladen (`%LOCALAPPDATA%\ADBora\tools` bzw. `Data\tools`), keine App auf dem Headset nötig.
-- Das Bild ist das **rohe Headset-Display**: bei der Quest beide Augen nebeneinander und
+  Auch das Headset-Casting braucht scrcpy (wegen FFmpeg).
+- Das Bild ist das **rohe Display**: bei der Quest beide Augen nebeneinander und
   schief eingebaut, bei der Play For Dream ein 2 × 2-Raster auf einem eigenen Display.
   ADBora wählt passendes Display, Ausschnitt und Drehung automatisch; mit **Grösse,
   Versatz und Neigung** lässt sich nachjustieren (wird pro Gerätemodell gemerkt).
-  Ein entzerrtes Breitbild wie beim offiziellen Casting ist so nicht möglich.
+  Für Quest und Play For Dream liefert das Headset-Casting ein entzerrtes Bild.
 - Ton des Headsets oder Mikrofon, Steuerung per Maus/Tastatur (optional), Aufnahme als MP4
   (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
 - Während des Streams: Näherungssensor aus (Quest) bzw. Display-Timeout 1 Stunde (andere
@@ -206,11 +230,15 @@ Ergebnis in `dist\`: `ADBora-Portable\`, `ADBora-Portable-<Version>-Windows-x64.
 und – falls Inno Setup installiert ist – `ADBora-Setup-<Version>.exe`.
 Optional Platform-Tools nach `build\adb\` kopieren, dann werden sie mitgeliefert.
 Diagnose: `ADBora.exe --check-apk <datei.apk>`.
+Begleit-App ADBora Mic: `build\BUILD-COMPANION.ps1` (Android SDK build-tools/platform 34 + JDK,
+ohne Gradle); das APK wird in ADBora eingebettet.
 
 ### Lizenz
 
 GPL-3.0 (siehe `LICENSE`). Android Debug Bridge / Platform Tools sind separate
-Google-Komponenten und nicht Teil dieses Projekts. Erstellt von
+Google-Komponenten und nicht Teil dieses Projekts. scrcpy (Apache-2.0) und die darin
+enthaltenen FFmpeg-Bibliotheken (LGPL) werden nicht mitgeliefert, sondern bei Bedarf von
+GitHub geladen. Erstellt von
 [@urscaviezel](https://github.com/urscaviezel).
 
 ---
@@ -244,7 +272,7 @@ backups are never deleted. The current data location is shown in
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
 | **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
-| **5 · Stream (beta)** | *Experimental:* headset view live on the PC via scrcpy (USB or Wi-Fi), display, view, rotation and tilt settings with presets for Quest 3 and Play For Dream, audio/microphone, MP4 recording, screenshot |
+| **5 · Stream (beta)** | **Headset casting** for Meta Quest and Play For Dream: undistorted picture with audio and microphone over USB, MKV recording, screenshot. For all other Android devices **scrcpy** (raw display, view/rotation, audio, MP4 recording) |
 | **6 · Performance** | Live performance values via ADB (FPS, frame times, CPU/GPU load, clocks, temperatures, battery, RAM …) for Play For Dream and Meta Quest, choice of values and graphs, CSV log, switch or install the HUD app on the headset |
 | **7 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
 | **8 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
@@ -325,14 +353,38 @@ PC TCP sender → adb reverse → USB/Wi-Fi → toybox nc (device) → /dev/null
 Nothing is written to the device. The value is the throughput of this ADB/TCP
 path, not the theoretical bus speed.
 
-### Stream (beta, experimental)
+### Stream (beta)
+
+Two modes, switchable at the top of the tab; ADBora picks the right one for the device.
+
+**Headset casting (Meta Quest, Play For Dream)** – undistorted picture like official casting,
+directly over the USB cable (or Wi-Fi ADB) in an ADBora window, no browser, phone app or
+Meta account:
+
+- **Meta Quest:** ADBora starts the Quest's casting service (same mechanism as the Meta Quest
+  Developer Hub) and receives the video via `adb reverse`; about 2064 × 1440 at 30 fps, audio
+  as PCM. Stop any casting to phone, browser or SideQuest first.
+- **Play For Dream:** ADBora starts the PFD's built-in casting service and reads its stream via
+  `adb forward`; single eye 1280 × 720, audio as AAC. Stop Miracast first. Protected content
+  (DRM, browser) is not shown by the PFD here either.
+- Headset audio on the PC (can be switched on/off while streaming), volume per headset.
+- **Microphone:** the manufacturers' casting does not send the microphone. For this ADBora
+  installs the small companion app **ADBora Mic** when needed (`companion/mic`, open source,
+  no network access, no window); it only runs while streaming.
+- **MKV** recording with audio and microphone (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
+- Stream window: double-click/F11 = full screen, Esc = leave full screen, F12 = screenshot,
+  M = audio on/off, + / − = volume.
+- Decoding uses the FFmpeg libraries (LGPL) from the scrcpy package.
+
+**scrcpy (all Android devices)**
 
 - Uses **scrcpy** (open source, Apache-2.0); downloaded from GitHub with one click the first
   time (`%LOCALAPPDATA%\ADBora\tools` or `Data\tools`), no app needed on the headset.
-- The picture is the **raw headset display**: on the Quest both eyes side by side and mounted
+  Headset casting needs scrcpy too (for FFmpeg).
+- The picture is the **raw display**: on the Quest both eyes side by side and mounted
   tilted, on the Play For Dream a 2 × 2 grid on a separate display. ADBora picks display,
   view and rotation automatically; **size, offset and tilt** fine-tune it (remembered per
-  device model). An undistorted wide picture like official casting is not possible this way.
+  device model). For Quest and Play For Dream, headset casting gives an undistorted picture.
 - Headset audio or microphone, optional mouse/keyboard control, MP4 recording
   (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - While streaming: proximity sensor off (Quest) or display timeout 1 hour (other devices);
@@ -401,9 +453,12 @@ Output in `dist\`: `ADBora-Portable\`, `ADBora-Portable-<version>-Windows-x64.zi
 and – if Inno Setup is installed – `ADBora-Setup-<version>.exe`.
 Optionally copy Platform Tools to `build\adb\` to bundle them.
 Diagnostics: `ADBora.exe --check-apk <file.apk>`.
+Companion app ADBora Mic: `build\BUILD-COMPANION.ps1` (Android SDK build-tools/platform 34 + JDK,
+no Gradle); the APK is embedded in ADBora.
 
 ### License
 
 GPL-3.0 (see `LICENSE`). Android Debug Bridge / Platform Tools are separate
-Google components and not part of this project. Created by
+Google components and not part of this project. scrcpy (Apache-2.0) and the FFmpeg
+libraries (LGPL) included with it are not bundled but downloaded from GitHub when needed. Created by
 [@urscaviezel](https://github.com/urscaviezel).

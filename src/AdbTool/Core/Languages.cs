@@ -244,6 +244,20 @@ internal static class Languages
         return (list, broken);
     }
 
+    /// <summary>Downloads one language file from the repository and installs it; false if not available.</summary>
+    public static async Task<bool> DownloadAsync(string code, CancellationToken token)
+    {
+        if (!IsValidCode(code)) return false;
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"ADBora/{AppInfo.Version}");
+        using HttpResponseMessage response = await client.GetAsync($"https://raw.githubusercontent.com/urscaviezel/ADBora/main/lang/{code}.json", token);
+        if (!response.IsSuccessStatusCode) return false;
+        string content = await response.Content.ReadAsStringAsync(token);
+        if (Parse(content, code) is not { } lang) return false;
+        Install(new OnlineLanguage(code, lang.Name, lang.Version, content));
+        return true;
+    }
+
     public static void Install(OnlineLanguage language)
     {
         if (!IsValidCode(language.Code) || Parse(language.Content, language.Code) is null)

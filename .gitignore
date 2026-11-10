@@ -10,3 +10,7 @@ build/adb/*.dll
 # local reference copy, not part of ADBora
 SideQuest/
 Logo_2.png
+
+# signing key of the companion app (keep a backup)
+build/keys/
+build/companion-work/
