@@ -1145,3 +1145,43 @@ internal static class Ui
             grid.Controls.Add(controls[i], i, row);
     }
 }
+
+/// <summary>
+/// Flicker-free display for values that change several times per second (speed test):
+/// fixed size, opaque card background, double buffered, draws only its own text and never
+/// triggers a layout pass (unlike Label, also under WS_EX_COMPOSITED).
+/// </summary>
+internal sealed class LiveValue : Control
+{
+    public LiveValue()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.Selectable, false);
+        BackColor = Theme.Card;
+        ForeColor = Theme.Text;
+        Font = Theme.BaseFont;
+        Margin = new Padding(0, 8, 0, 4);
+        Text = "-";
+        Dock = DockStyle.Fill;
+        UpdateHeight();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        UpdateHeight();
+    }
+
+    private void UpdateHeight() => Height = TextRenderer.MeasureText("Xg", Font).Height + Theme.S(2);
+
+    public override Size GetPreferredSize(Size proposedSize) => new(Theme.S(160), Height);
+
+    protected override void OnTextChanged(EventArgs e) => Invalidate(); // no base call: no layout
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(BackColor);
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor, BackColor,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+    }
+}

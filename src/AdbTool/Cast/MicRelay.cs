@@ -14,7 +14,7 @@ namespace AdbTool.Cast;
 internal sealed class MicRelay : IDisposable
 {
     public const string Package = "com.adbora.mic";
-    private const int VersionCode = 1; // keep in sync with build/BUILD-COMPANION.ps1
+    private const int VersionCode = 4; // keep in sync with build/BUILD-COMPANION.ps1
     private readonly AdbClient _adb;
     private readonly CancellationTokenSource _cts = new();
     private TcpClient? _client;
@@ -86,9 +86,12 @@ internal sealed class MicRelay : IDisposable
         catch { }
     }
 
-    /// <summary>Installs the embedded APK if the app is missing or older.</summary>
-    private async Task EnsureInstalledAsync()
+    private Task EnsureInstalledAsync() => EnsureInstalledAsync(_adb, s => Log?.Invoke(s));
+
+    /// <summary>Installs the embedded companion APK if the app is missing or older.</summary>
+    public static async Task EnsureInstalledAsync(AdbClient adb, Action<string>? log)
     {
+        Task<AdbResult> Adb(int seconds, params string[] args) => adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(seconds), args);
         AdbResult info = await Adb(15, "shell", $"dumpsys package {Package} | grep versionCode");
         Match m = Regex.Match(info.Output, @"versionCode=(\d+)");
         if (m.Success && int.Parse(m.Groups[1].Value) >= VersionCode) return;
@@ -98,7 +101,7 @@ internal sealed class MicRelay : IDisposable
                                   ?? throw new InvalidOperationException("ADBoraMic.apk resource missing"))
         await using (FileStream f = File.Create(apk))
             await res.CopyToAsync(f);
-        Log?.Invoke(Loc.T("Installiere ADBora Mic auf dem Headset …", "Installing ADBora Mic on the headset …"));
+        log?.Invoke(Loc.T("Installiere ADBora Mic auf dem Headset …", "Installing ADBora Mic on the headset …"));
         try
         {
             AdbResult r = await Adb(60, "install", "-r", "-g", apk);

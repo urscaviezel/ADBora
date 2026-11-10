@@ -34,6 +34,31 @@ internal static class Program
 
         // Diagnostic mode: ADBora.exe --cast-test <adb.exe> <serial> <quest|pfd> <seconds> <out.png>
         // Runs headset casting without a window and saves the last picture (+ <out>.log).
+        // Diagnostic: ADBora.exe --ncm-test <adb.exe> <serial> <seconds> <log> – holds Quest USB networking
+        int ncmTest = Array.IndexOf(args, "--ncm-test");
+        if (ncmTest >= 0 && ncmTest + 4 < args.Length)
+        {
+            string log = args[ncmTest + 4];
+            void W(string t) => File.AppendAllText(log, $"{DateTime.Now:HH:mm:ss} {t}\r\n");
+            var adbc = new AdbClient(args[ncmTest + 1], args[ncmTest + 2]);
+            using var hold = new Cast.UsbNetworkHold(args[ncmTest + 1], args[ncmTest + 2]);
+            try
+            {
+                hold.StartAsync(W).GetAwaiter().GetResult();
+                W("holding");
+                for (int i = 0; i < int.Parse(args[ncmTest + 3]); i += 10)
+                {
+                    Thread.Sleep(10_000);
+                    W("usb0: " + adbc.CaptureAsync(CancellationToken.None, "shell", "ip -o -4 addr show usb0").GetAwaiter().GetResult().Output.Trim());
+                }
+                hold.StopAsync().GetAwaiter().GetResult();
+                Thread.Sleep(3000);
+                W("after stop usb0: '" + adbc.CaptureAsync(CancellationToken.None, "shell", "ip -o -4 addr show usb0; pidof com.adbora.mic").GetAwaiter().GetResult().Output.Trim() + "'");
+            }
+            catch (Exception ex) { W("ERROR " + ex.Message); }
+            return 0;
+        }
+
         int mkvTest = Array.IndexOf(args, "--mkv-test");
         if (mkvTest >= 0 && mkvTest + 2 < args.Length)
             return MkvTest(args[mkvTest + 1], args[mkvTest + 2]);

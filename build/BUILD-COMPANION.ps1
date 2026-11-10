@@ -2,7 +2,7 @@
 # aapt2 (manifest) + javac + d8 + zipalign + apksigner.
 # Output: src\AdbTool\Resources\ADBoraMic.apk (embedded in ADBora).
 # Signing key: build\keys\companion.jks (not in the repository; created on first run).
-param([string]$Sdk = "C:\AI-Projects\SDKs\android-sdk", [int]$VersionCode = 1, [string]$VersionName = "1.0")
+param([string]$Sdk = "C:\AI-Projects\SDKs\android-sdk", [int]$VersionCode = 4, [string]$VersionName = "1.3")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $src = Join-Path $root "companion\mic"
@@ -27,7 +27,7 @@ Run (Join-Path $tools "aapt2.exe") @("link", "-o", (Join-Path $work "base.apk"),
 
 # 2. Java → classes → dex
 $java = Get-ChildItem (Join-Path $src "src") -Recurse -Filter *.java | ForEach-Object { $_.FullName }
-Run (Join-Path $jdk "javac.exe") (@("-source", "11", "-target", "11", "-nowarn", "-encoding", "UTF-8", "-classpath", $androidJar, "-d", (Join-Path $work "classes")) + $java)
+Run (Join-Path $jdk "javac.exe") (@("-source", "8", "-target", "8", "-nowarn", "-encoding", "UTF-8", "-classpath", $androidJar, "-d", (Join-Path $work "classes")) + $java)
 $classes = Get-ChildItem (Join-Path $work "classes") -Recurse -Filter *.class | ForEach-Object { $_.FullName }
 Run (Join-Path $tools "d8.bat") (@("--release", "--min-api", "29", "--lib", $androidJar, "--output", (Join-Path $work "dex")) + $classes)
 
@@ -51,5 +51,6 @@ if (-not (Test-Path $ks)) {
 $pass = Get-Content $passFile -Raw
 Run (Join-Path $tools "apksigner.bat") @("sign", "--ks", $ks, "--ks-pass", "pass:$pass", "--ks-key-alias", "adbora", "--out", $outApk, (Join-Path $work "aligned.apk"))
 Run (Join-Path $tools "apksigner.bat") @("verify", $outApk)
+Remove-Item "$outApk.idsig" -ErrorAction SilentlyContinue # v4 signature file (only for incremental installs)
 Remove-Item $work -Recurse -Force
 Write-Host "ADBora Mic built: $outApk ($((Get-Item $outApk).Length) bytes)" -ForegroundColor Green

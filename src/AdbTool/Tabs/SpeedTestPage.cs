@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
+using AdbTool.Cast;
 using AdbTool.Core;
 using AdbTool.UI;
 
@@ -33,6 +36,33 @@ internal sealed class SpeedTestPage : UserControl, IPage
     private readonly RadioButton _limited = Ui.Radio("Bandbreite begrenzen", "Limit bandwidth");
     private readonly RadioButton _max = Ui.Radio("Maximale stabile Transferrate ermitteln", "Determine maximum stable transfer rate");
     private readonly TextBox _rate = Ui.TextBox(110);
+    private readonly RadioButton _pathAdb = Ui.Radio("ADB (adb reverse, über USB oder WLAN-ADB)", "ADB (adb reverse, via USB or Wi-Fi ADB)");
+    private readonly RadioButton _pathDirect = Ui.Radio("TCP/IP direkt (USB-NCM oder WLAN)", "TCP/IP direct (USB NCM or Wi-Fi)");
+    private readonly DarkComboBox _directTarget = Ui.Combo(330);
+    private readonly DarkButton _detect = Ui.Button("Erkennen", "Detect");
+    private readonly List<DirectTarget> _targets = new();
+    private static readonly int[] StreamCounts = { 1, 4, 8 };
+    private readonly DarkComboBox _streams = Ui.Combo(80);
+    private readonly LiveValue _resultDownValue = new();
+    private readonly LiveValue _resultUpValue = new();
+    private readonly List<TcpClient> _directClients = new();
+    private bool _proxApplied;
+    private UsbNetworkHold? _ncmHold;
+    private readonly SpeedChart _chart = new() { Dock = DockStyle.Fill };
+    private readonly LiveValue _analysis = new() { ForeColor = Theme.Muted };
+    private readonly DarkButton _export = Ui.Button("Bericht speichern (PNG + CSV)", "Save report (PNG + CSV)");
+    private readonly Stopwatch _testClock = new();
+    private int _phase;
+    private string _firmware = "";
+    private string _testDescription = "";
+    private CancellationTokenSource? _wifiCts;
+    private double _lastAnalysisT;
+    private bool _detecting;
+    private string? _targetsSerial;
+    private const int StallTimeoutMs = 10_000;
+
+    /// <summary>Address of the headset for the direct TCP test (IPv6 link-local with the PC's interface as scope).</summary>
+    private sealed record DirectTarget(string Name, IPAddress Address, bool Wifi = false);
     private readonly TextBox _duration = Ui.TextBox(110);
 
     private readonly DarkButton _check = Ui.Button("Gerät prüfen", "Check device");
@@ -41,13 +71,13 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
     private readonly Label _hmdValue = Ui.Value();
     private readonly Label _statusValue = Ui.Value();
-    private readonly Label _attemptValue = Ui.Value();
-    private readonly Label _targetValue = Ui.Value();
-    private readonly Label _elapsedValue = Ui.Value();
-    private readonly Label _remainingValue = Ui.Value();
-    private readonly Label _sentValue = Ui.Value();
-    private readonly Label _currentValue = Ui.Value();
-    private readonly Label _averageValue = Ui.Value();
+    private readonly LiveValue _attemptValue = new();
+    private readonly LiveValue _targetValue = new();
+    private readonly LiveValue _elapsedValue = new();
+    private readonly LiveValue _remainingValue = new();
+    private readonly LiveValue _sentValue = new();
+    private readonly LiveValue _currentValue = new();
+    private readonly LiveValue _averageValue = new();
     private readonly Label _lastDisconnectValue = Ui.Value();
     private readonly DarkProgressBar _progress = new() { Maximum = 1000, Height = 26 };
     private readonly TextBox _history = Ui.Console();
@@ -90,12 +120,18 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
         _uiTimer.Tick += (_, _) => PublishLiveStats();
         _state.BusyChanged += UpdateEnabled;
+        HandleDestroyed += (_, _) => _ncmHold?.Dispose();
         _state.SelectedDeviceChanged += () =>
         {
+            if (_ncmHold is not null && _ncmHold.Serial != _state.SelectedDevice?.Serial) _ = ReleaseNcmAsync();
             if (_cts is null) { _hmdChecked = false; RenderHmd(); }
+            if (_targetsSerial != _state.SelectedDevice?.Serial) ClearTargets();
             UpdateEnabled();
+            AutoDetect();
         };
         Loc.LanguageChanged += () => { RenderHmd(); _statusValue.Text = Loc.T(_status.De, _status.En); };
+        // After the start the device is often reported as ready only a little later
+        _state.DevicesChanged += () => { if (IsHandleCreated) BeginInvoke(new Action(AutoDetect)); };
         UpdateEnabled();
     }
 
@@ -110,6 +146,41 @@ internal sealed class SpeedTestPage : UserControl, IPage
         var settings = new Card("Verbindung / Testeinstellungen", "Connection / Test settings") { Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 0, 10, 12) };
         var grid = Ui.Grid(2);
         Ui.AddRow(grid, Ui.Label("TCP-Port:", "TCP port:", muted: true), Ui.Row(_port));
+
+        var paths = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0, 6, 0, 2) };
+        paths.Controls.Add(_pathAdb);
+        paths.Controls.Add(_pathDirect);
+        _pathAdb.Checked = !_state.Settings.SpeedDirect;
+        _pathDirect.Checked = _state.Settings.SpeedDirect;
+        _pathDirect.CheckedChanged += async (_, _) =>
+        {
+            _state.Settings.SpeedDirect = _pathDirect.Checked;
+            _state.Settings.Save();
+            if (!_pathDirect.Checked) await ReleaseNcmAsync();
+            UpdateEnabled();
+            AutoDetect();
+        };
+        Ui.AddRow(grid, Ui.Label("Messweg:", "Test path:", muted: true), paths);
+        _detect.Click += async (_, _) => await DetectTargetsAsync();
+        _directTarget.Items.Add(Loc.T("– noch nicht erkannt –", "– not detected yet –"));
+        _directTarget.SelectedIndex = 0;
+        var targetRow = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
+        targetRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        targetRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _directTarget.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _directTarget.MinimumSize = new Size(Theme.S(120), 0);
+        targetRow.Controls.Add(_directTarget, 0, 0);
+        targetRow.Controls.Add(_detect, 1, 0);
+        Ui.AddRow(grid, Ui.Label("Ziel:", "Target:", muted: true), targetRow);
+        foreach (int n in StreamCounts) _streams.Items.Add(n.ToString(CultureInfo.InvariantCulture));
+        _streams.SelectedIndex = Math.Max(0, Array.IndexOf(StreamCounts, _state.Settings.SpeedStreams));
+        _streams.SelectedIndexChanged += (_, _) => { _state.Settings.SpeedStreams = StreamCounts[Math.Max(0, _streams.SelectedIndex)]; _state.Settings.Save(); };
+        var streamsHint = Ui.Label("parallele TCP-Verbindungen (mehrere = vergleichbar mit Online-Speedtests)", "parallel TCP connections (several = comparable to online speed tests)", muted: true);
+        streamsHint.Margin = new Padding(0, 8, 0, 0);
+        var streamsRow = Ui.Row(_streams, streamsHint);
+        streamsRow.WrapContents = true;
+        Ui.WrapTo(streamsHint, settings, 260);
+        Ui.AddRow(grid, Ui.Label("Verbindungen:", "Connections:", muted: true), streamsRow);
 
         var modes = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0, 6, 0, 6) };
         modes.Controls.Add(_max);
@@ -145,10 +216,10 @@ internal sealed class SpeedTestPage : UserControl, IPage
         grid.SetColumnSpan(info, 2);
 
         var how = Ui.Label(
-            "Messpfad: PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Es wird nichts auf dem Gerät gespeichert. " +
-            "Der Wert ist der Durchsatz dieses ADB/TCP-Pfads, nicht die theoretische USB-Busgeschwindigkeit.",
-            "Test path: PC TCP sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Nothing is written to the device. " +
-            "The value is the throughput of this ADB/TCP path, not the theoretical USB bus speed.", muted: true);
+            "Messpfad ADB: PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Der Wert ist der Durchsatz dieses ADB/TCP-Pfads, nicht die theoretische USB-Busgeschwindigkeit. " +
+            "TCP/IP direkt: PC ↔ Netzwerkadapter ↔ toybox nc auf dem Headset, ohne ADB – über USB-NCM (USB-Netzwerk; bei der Quest schaltet ADBora es bei Bedarf über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren) oder WLAN; gemessen wird in beide Richtungen. Es wird nichts auf dem Gerät gespeichert.",
+            "ADB path: PC TCP sender → adb reverse → USB/WLAN → toybox nc → /dev/null. The value is the throughput of this ADB/TCP path, not the theoretical USB bus speed. " +
+            "TCP/IP direct: PC ↔ network adapter ↔ toybox nc on the headset, without ADB – over USB NCM (USB networking; on the Quest ADBora switches it on via the companion app when needed, on the Play For Dream enable it in the experimental settings) or Wi-Fi; both directions are measured. Nothing is written to the device.", muted: true);
         Ui.WrapTo(how, settings);
         how.Margin = new Padding(0, 10, 0, 0);
         Ui.AddRow(grid, how);
@@ -161,12 +232,15 @@ internal sealed class SpeedTestPage : UserControl, IPage
         var status = new Card("Status", "Status") { Composited = true, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(10, 0, 0, 12) };
         var statusGrid = Ui.Grid(2);
         statusGrid.ColumnStyles[0] = new ColumnStyle(SizeType.Absolute, 150);
-        void Row(string de, string en, Label value)
+        void Row(string de, string en, Control value)
         {
-            value.AutoEllipsis = false;
-            // A minimum width keeps the table from re-laying out on every value change.
-            value.MinimumSize = new Size(160, 0);
-            Ui.WrapTo(value, status, 170);
+            if (value is Label label)
+            {
+                // Rarely changing texts (device, status) may wrap
+                label.AutoEllipsis = false;
+                label.MinimumSize = new Size(160, 0);
+                Ui.WrapTo(label, status, 170);
+            }
             Ui.AddRow(statusGrid, Ui.Label(de, en, muted: true), value);
         }
         Row("Gerät / HMD:", "Device / HMD:", _hmdValue);
@@ -179,7 +253,10 @@ internal sealed class SpeedTestPage : UserControl, IPage
         Row("Aktuell:", "Current:", _currentValue);
         Row("Durchschnitt:", "Average:", _averageValue);
         Row("Letzter Abbruch:", "Last disconnect:", _lastDisconnectValue);
-        _currentValue.Font = _averageValue.Font = Theme.SectionFont;
+        Row("↓ Headset → PC:", "↓ Headset → PC:", _resultDownValue);
+        Row("↑ PC → Headset:", "↑ PC → headset:", _resultUpValue);
+        // Live values (LiveValue): fixed size, draw only themselves → no flicker
+        _currentValue.Font = _averageValue.Font = _resultDownValue.Font = _resultUpValue.Font = Theme.SectionFont;
         _averageValue.ForeColor = Theme.Accent;
         _progress.Dock = DockStyle.Fill;
         _progress.Margin = new Padding(0, 12, 0, 4);
@@ -189,9 +266,30 @@ internal sealed class SpeedTestPage : UserControl, IPage
         root.Controls.Add(status, 1, 0);
 
         // History ------------------------------------------------------------
-        var historyCard = new Card("Verlauf (diese Sitzung)", "History (this session)") { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var historyCard = new Card("Protokoll (diese Sitzung)", "Log (this session)") { Dock = DockStyle.Fill, Margin = new Padding(0) };
         historyCard.SetContent(_history, fill: true);
+
+        // Throughput chart -----------------------------------------------------
+        var chartCard = new Card("Durchsatz-Verlauf", "Throughput history") { Dock = DockStyle.Top, Height = Theme.S(340) };
+        var chartBox = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent };
+        chartBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        chartBox.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        chartBox.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        chartBox.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _analysis.Text = Loc.T("Einbrüche (unter 50 % des Medians) gelb, Aussetzer rot markiert.", "Dips (below 50 % of the median) marked yellow, stalls red.");
+        _analysis.Margin = new Padding(0, 6, 8, 6);
+        _export.Enabled = false;
+        _export.Click += (_, _) => ExportReport();
+        chartBox.Controls.Add(_analysis, 0, 0);
+        chartBox.Controls.Add(_export, 1, 0);
+        chartBox.Controls.Add(_chart, 0, 1);
+        chartBox.SetColumnSpan(_chart, 2);
+        chartCard.SetContent(chartBox, fill: true);
+        var chartSpacer = new Panel { Dock = DockStyle.Top, Height = Theme.S(12), BackColor = Color.Transparent };
+
         Controls.Add(historyCard);
+        Controls.Add(chartSpacer);
+        Controls.Add(chartCard);
         Controls.Add(root);
 
         // Narrow window: stack settings above status; the page scrolls and the
@@ -199,7 +297,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
         bool narrowMode = false;
         void UpdateScroll()
         {
-            AutoScrollMinSize = narrowMode ? new Size(0, root.Height + historyCard.Height + Padding.Vertical) : Size.Empty;
+            AutoScrollMinSize = narrowMode ? new Size(0, root.Height + chartCard.Height + chartSpacer.Height + historyCard.Height + Padding.Vertical) : Size.Empty;
         }
         Ui.Responsive(this, root, settings, status, breakpoint: 940, firstPercent: 46, changed: narrow =>
         {
@@ -216,7 +314,33 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
     // ------------------------------------------------------------------
 
-    public void OnActivated() => UpdateEnabled();
+    public void OnActivated()
+    {
+        UpdateEnabled();
+        AutoDetect();
+    }
+
+    /// <summary>
+    /// "TCP/IP direct" selected (also right after the start, when the setting was saved that
+    /// way): detect the targets automatically as soon as the tab is visible and the device is
+    /// ready, once per device.
+    /// </summary>
+    private void AutoDetect()
+    {
+        if (!_pathDirect.Checked || _cts is not null || _detecting || !Visible) return;
+        if (_state.SelectedDevice is not { IsReady: true } d || !_state.HasAdb || _state.IsBusy) return;
+        if (_targets.Count > 0 && _targetsSerial == d.Serial) return;
+        _ = DetectTargetsAsync();
+    }
+
+    private void ClearTargets()
+    {
+        _targets.Clear();
+        _targetsSerial = null;
+        _directTarget.Items.Clear();
+        _directTarget.Items.Add(Loc.T("– noch nicht erkannt –", "– not detected yet –"));
+        _directTarget.SelectedIndex = 0;
+    }
 
     private void UpdateModeState() => _rate.Enabled = !_max.Checked;
 
@@ -228,8 +352,13 @@ internal sealed class SpeedTestPage : UserControl, IPage
         _check.Enabled = idle && ready;
         _start.Enabled = idle && ready;
         _cancel.Enabled = running && !_cts!.IsCancellationRequested;
-        _port.Enabled = _duration.Enabled = _max.Enabled = _limited.Enabled = !running;
-        _rate.Enabled = !running && !_max.Checked;
+        bool direct = _pathDirect.Checked;
+        _port.Enabled = _duration.Enabled = _pathAdb.Enabled = _pathDirect.Enabled = !running;
+        _max.Enabled = _limited.Enabled = !running && !direct;
+        _rate.Enabled = !running && !_max.Checked && !direct;
+        _directTarget.Enabled = _streams.Enabled = !running && direct;
+        _detect.Enabled = idle && ready && direct && !_detecting;
+        if (direct) _start.Enabled = idle && ready && SelectedTarget is not null;
     }
 
     private void SetStatus(string de, string en)
@@ -340,9 +469,10 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
         _adb = _state.DeviceAdb;
         _cts = new CancellationTokenSource();
-        UpdateEnabled();
-        ResetStats(duration);
+        Ui.Frozen(this, () => { UpdateEnabled(); ResetStats(duration); }); // one repaint instead of many
+
         bool max = _max.Checked;
+        bool direct = _pathDirect.Checked;
         string result = "";
 
         try
@@ -350,10 +480,26 @@ internal sealed class SpeedTestPage : UserControl, IPage
             _hmdModel = await GetModelAsync(_cts.Token);
             _hmdChecked = true;
             RenderHmd();
+            await KeepAwakeAsync(true);
+            _firmware = (await _adb!.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell", "getprop ro.build.display.id")).Output.Trim();
+            _chart.Clear();
+            _export.Enabled = false;
+            _lastAnalysisT = 0;
+            _testClock.Restart();
+            int streamsUsed = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
+            _testDescription = direct
+                ? Loc.T($"Messweg: TCP/IP direkt · {SelectedTarget?.Name} · {streamsUsed} Verbindung(en) · {duration:0} s pro Richtung",
+                        $"Test path: TCP/IP direct · {SelectedTarget?.Name} · {streamsUsed} connection(s) · {duration:0} s per direction")
+                : Loc.T($"Messweg: ADB (adb reverse) über {(_adb.Serial.Contains(':') ? "WLAN-ADB" : "USB")} · {(max ? "Max" : $"Limit {rate:0} Mbit/s")} · {duration:0} s",
+                        $"Test path: ADB (adb reverse) via {(_adb.Serial.Contains(':') ? "Wi-Fi ADB" : "USB")} · {(max ? "max" : $"limit {rate:0} Mbit/s")} · {duration:0} s");
+            if ((direct && SelectedTarget?.Wifi == true) || (!direct && _adb.Serial.Contains(':')))
+                StartWifiPolling(_adb);
 
-            result = max
-                ? await RunMaxModeAsync(port, duration, _cts.Token)
-                : await RunLimitedModeAsync(port, duration, rate, _cts.Token);
+            result = direct
+                ? await RunDirectAsync(SelectedTarget!, port, duration, _cts.Token)
+                : max
+                    ? await RunMaxModeAsync(port, duration, _cts.Token)
+                    : await RunLimitedModeAsync(port, duration, rate, _cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -370,18 +516,34 @@ internal sealed class SpeedTestPage : UserControl, IPage
         {
             _uiTimer.Stop();
             _liveRunning = false;
+            _wifiCts?.Cancel();
+            _wifiCts = null;
             CleanupConnection();
-            await RemoveReverseAsync(port);
-            // Clean ADB state after a USB test, as in the stand-alone tool. Not for
-            // Wi-Fi devices: stopping the server would drop the Wi-Fi connection.
-            if (_adb is not null && !_adb.Serial.Contains(':'))
-                await _adb.KillServerAsync();
+            await KeepAwakeAsync(false);
+            if (_chart.Analyze() is { } analysis)
+            {
+                _analysis.Text = analysis.Summary(!Loc.IsGerman);
+                Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {analysis.Summary(!Loc.IsGerman)}");
+            }
+            _export.Enabled = _chart.HasData;
+            if (direct)
+            {
+                await StopDeviceNcAsync(port);
+            }
+            else
+            {
+                await RemoveReverseAsync(port);
+                // Clean ADB state after a USB test, as in the stand-alone tool. Not for
+                // Wi-Fi devices: stopping the server would drop the Wi-Fi connection.
+                if (_adb is not null && !_adb.Serial.Contains(':'))
+                    await _adb.KillServerAsync();
+            }
             _cts.Dispose();
             _cts = null;
             _state.EndOperation();
             UpdateEnabled();
 
-            string mode = max ? "Max" : $"{Loc.T("Limit", "Limit")} {rate:0} Mbit/s";
+            string mode = direct ? $"{Loc.T("TCP direkt", "TCP direct")} · {SelectedTarget?.Name}" : max ? "Max" : $"{Loc.T("Limit", "Limit")} {rate:0} Mbit/s";
             Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}  {_hmdModel} ({_state.SelectedDevice?.Serial})  ·  {mode}  ·  {duration:0} s  →  {result}");
             _ = _state.RefreshDevicesAsync();
         }
@@ -468,6 +630,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             SetStatus($"Versuch {attemptNo}: teste {targetMbps.Value:0.0} Mbit/s...", $"Attempt {attemptNo}: testing {targetMbps.Value:0.0} Mbit/s...");
 
         _progress.Value = 0;
+        _phase = _chart.AddPhase(Loc.T($"ADB · Versuch {attemptNo}", $"ADB · attempt {attemptNo}") + (targetMbps is null ? "" : $" · {targetMbps.Value:0} Mbit/s"));
         Interlocked.Exchange(ref _liveSent, 0);
         Volatile.Write(ref _liveElapsed, 0);
         _liveDuration = duration;
@@ -553,6 +716,13 @@ internal sealed class SpeedTestPage : UserControl, IPage
         ForceStats(elapsed, _liveDuration, sent, current);
         _lastUiTime = elapsed;
         _lastUiBytes = sent;
+        double t = _testClock.Elapsed.TotalSeconds;
+        _chart.Add(new RateSample(t, current, _phase));
+        if (t - _lastAnalysisT >= 1)
+        {
+            _lastAnalysisT = t;
+            if (_chart.Analyze() is { } a) _analysis.Text = a.Summary(!Loc.IsGerman);
+        }
     }
 
     private void ForceStats(double elapsed, double duration, long sent, double current)
@@ -571,7 +741,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
     }
 
     /// <summary>Only touches the label if the text really changed (avoids needless repaints).</summary>
-    private static void SetText(Label label, string text)
+    private static void SetText(Control label, string text)
     {
         if (label.Text != text)
             label.Text = text;
@@ -604,6 +774,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
         _client = await accept;
         _client.NoDelay = true;
         _client.Client.SendBufferSize = 4 * 1024 * 1024;
+        _client.Client.SendTimeout = StallTimeoutMs; // headset in standby: counts as a disconnect instead of hanging
         return _client;
     }
 
@@ -657,6 +828,355 @@ internal sealed class SpeedTestPage : UserControl, IPage
             throw new Exception(Loc.T($"ADB reverse fehlgeschlagen: {result.Error}", $"ADB reverse failed: {result.Error}"));
     }
 
+    // ------------------------------------------------------------------
+    // Direct TCP/IP test (USB NCM / Wi-Fi), both directions, without ADB in the data path
+    // ------------------------------------------------------------------
+
+    private DirectTarget? SelectedTarget =>
+        _directTarget.SelectedIndex >= 0 && _directTarget.SelectedIndex < _targets.Count ? _targets[_directTarget.SelectedIndex] : null;
+
+    /// <summary>
+    /// Reads the headset's network interfaces ("ip -o addr"): Wi-Fi (IPv4) and USB networking
+    /// (usb*/ncm*/rndis*). For USB the IPv4 address is used if the PC has an address in the same
+    /// subnet, otherwise the IPv6 link-local address with the PC's USB network adapter as scope
+    /// (works without DHCP).
+    /// </summary>
+    private async Task DetectTargetsAsync()
+    {
+        AdbDevice? device = _state.SelectedDevice;
+        if (_detecting) return;
+        if (device is not { IsReady: true } || !_state.HasAdb)
+        {
+            SetStatus("Kein bereites Gerät ausgewählt.", "No ready device selected.");
+            return;
+        }
+        _detecting = true;
+        _detect.Enabled = false;
+        SetStatus("Suche Netzwerk-Schnittstellen...", "Looking for network interfaces...");
+        var found = new List<DirectTarget>();
+        try
+        {
+            var adb = new AdbClient(_state.AdbPath!, device.Serial);
+            if (device.Model.Contains("Quest", StringComparison.OrdinalIgnoreCase))
+                await EnsureQuestNcmAsync(adb, device.Serial);
+            AdbResult r = await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell", "ip -o addr show");
+            var v4 = new List<(string If, IPAddress Ip, int Prefix)>();
+            var v6 = new List<(string If, IPAddress Ip)>();
+            foreach (Match m in Regex.Matches(r.Output, @"^\d+:\s+(\S+)\s+inet\s+([\d.]+)/(\d+)", RegexOptions.Multiline))
+                v4.Add((m.Groups[1].Value, IPAddress.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)));
+            foreach (Match m in Regex.Matches(r.Output, @"^\d+:\s+(\S+)\s+inet6\s+(fe80:[0-9a-f:]+)/\d+", RegexOptions.Multiline))
+                v6.Add((m.Groups[1].Value, IPAddress.Parse(m.Groups[2].Value)));
+
+            static bool IsUsb(string name) => Regex.IsMatch(name, @"^(usb|ncm|rndis)\d*$");
+            NetworkInterface[] pcNics = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up).ToArray();
+
+            foreach (string usbIf in v4.Select(x => x.If).Concat(v6.Select(x => x.If)).Where(IsUsb).Distinct())
+            {
+                // IPv4 if the PC is in the same subnet
+                var ip4 = v4.FirstOrDefault(x => x.If == usbIf);
+                if (ip4.Ip is not null && pcNics.Any(n => n.GetIPProperties().UnicastAddresses.Any(u => SameSubnet(u.Address, ip4.Ip, ip4.Prefix))))
+                {
+                    found.Add(new DirectTarget($"USB-NCM ({usbIf}) · {ip4.Ip}", ip4.Ip));
+                    continue;
+                }
+                // otherwise IPv6 link-local over every USB network adapter of the PC
+                var ip6 = v6.FirstOrDefault(x => x.If == usbIf);
+                if (ip6.Ip is null) continue;
+                foreach (NetworkInterface nic in pcNics.Where(n => Regex.IsMatch(n.Description, "NCM|RNDIS|Remote NDIS|USB.*(Ethernet|Network)", RegexOptions.IgnoreCase)))
+                {
+                    if (!nic.Supports(NetworkInterfaceComponent.IPv6)) continue;
+                    var addr = new IPAddress(ip6.Ip.GetAddressBytes(), nic.GetIPProperties().GetIPv6Properties().Index);
+                    found.Add(new DirectTarget($"USB-NCM ({usbIf}) · IPv6 · {nic.Name}", addr));
+                }
+            }
+            foreach (var w in v4.Where(x => x.If.StartsWith("wlan", StringComparison.Ordinal)))
+                found.Add(new DirectTarget($"{Loc.T("WLAN", "Wi-Fi")} ({w.If}) · {w.Ip}", w.Ip, Wifi: true));
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Fehler: {ex.Message}", $"Error: {ex.Message}");
+        }
+
+        _targets.Clear();
+        _targets.AddRange(found);
+        _directTarget.Items.Clear();
+        foreach (DirectTarget t in _targets) _directTarget.Items.Add(t.Name);
+        if (_targets.Count == 0)
+        {
+            _directTarget.Items.Add(Loc.T("– keine Schnittstelle gefunden –", "– no interface found –"));
+            SetStatus("Keine Netzwerk-Schnittstelle gefunden.", "No network interface found.");
+        }
+        else
+        {
+            int usb = _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal));
+            SetStatus(usb >= 0 ? "USB-NCM gefunden." : "Nur WLAN gefunden – USB-NCM ist nicht aktiv (Play For Dream: in den experimentellen Einstellungen einschalten).",
+                      usb >= 0 ? "USB NCM found." : "Only Wi-Fi found – USB NCM is not active (Play For Dream: switch it on in the experimental settings).");
+        }
+        _directTarget.SelectedIndex = Math.Max(0, _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal)));
+        _targetsSerial = _targets.Count > 0 ? device.Serial : null;
+        _detecting = false;
+        UpdateEnabled();
+    }
+
+    /// <summary>
+    /// Quest: USB networking is only on while an app requests it. If usb0 has no address,
+    /// ADBora requests it through its companion app (like Virtual Desktop) and keeps it on
+    /// while the direct test is selected.
+    /// </summary>
+    private async Task EnsureQuestNcmAsync(AdbClient adb, string serial)
+    {
+        async Task<bool> HasUsbAddress() =>
+            (await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell", "ip -o -4 addr show usb0")).Output.Contains("inet ");
+        if (await HasUsbAddress()) return;
+        SetStatus("Schalte USB-Netzwerk (NCM) auf der Quest ein...", "Switching on USB networking (NCM) on the Quest...");
+        try
+        {
+            if (_ncmHold is not null && _ncmHold.Serial != serial) await ReleaseNcmAsync();
+            _ncmHold ??= new UsbNetworkHold(_state.AdbPath!, serial);
+            await _ncmHold.StartAsync(t => Ui.AppendLine(_history, t));
+            for (int i = 0; i < 20; i++)
+            {
+                await Task.Delay(500);
+                if (await HasUsbAddress())
+                {
+                    await Task.Delay(1500); // let Windows bring up its USB network adapter
+                    return;
+                }
+            }
+            MessageBox.Show(FindForm(), Loc.T(
+                "Die Quest hat das USB-Netzwerk nicht eingeschaltet. Beim ersten Mal fragt sie im Headset um Erlaubnis – bitte dort zustimmen (\"Immer erlauben\") und danach nochmals \"Erkennen\" klicken.",
+                "The Quest did not switch on USB networking. The first time it asks for permission in the headset – please allow it there (\"Always allow\") and click \"Detect\" again."),
+                "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            Ui.AppendLine(_history, Loc.T("USB-Netzwerk: ", "USB networking: ") + ex.Message);
+        }
+    }
+
+    private async Task ReleaseNcmAsync()
+    {
+        UsbNetworkHold? hold = _ncmHold;
+        _ncmHold = null;
+        if (hold is not null) await hold.StopAsync();
+    }
+
+    private static bool SameSubnet(IPAddress a, IPAddress b, int prefix)
+    {
+        if (a.AddressFamily != AddressFamily.InterNetwork || b.AddressFamily != AddressFamily.InterNetwork || a.Equals(b)) return false;
+        uint ua = BitConverter.ToUInt32(a.GetAddressBytes().Reverse().ToArray()), ub = BitConverter.ToUInt32(b.GetAddressBytes().Reverse().ToArray());
+        uint mask = prefix == 0 ? 0 : uint.MaxValue << (32 - prefix);
+        return (ua & mask) == (ub & mask);
+    }
+
+    private async Task<string> RunDirectAsync(DirectTarget target, int port, double duration, CancellationToken token)
+    {
+        _targetValue.Text = target.Name.Split(" · ")[0]; // e.g. "USB-NCM (usb0)"; full name in the history
+        _attemptValue.Text = Loc.T("↓ Headset → PC", "↓ headset → PC");
+        int streams = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
+        double down = await RunDirectAttemptAsync(target, port, duration, streams, download: true, token);
+        _resultDownValue.Text = $"{down:0.0} Mbit/s";
+        Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    ↓ {Loc.T("Headset → PC", "headset → PC")}: {down:0.0} Mbit/s ({down / 8:0.0} MB/s)");
+        _attemptValue.Text = Loc.T("↑ PC → Headset", "↑ PC → headset");
+        double up = await RunDirectAttemptAsync(target, port, duration, streams, download: false, token);
+        _resultUpValue.Text = $"{up:0.0} Mbit/s";
+        Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    ↑ {Loc.T("PC → Headset", "PC → headset")}: {up:0.0} Mbit/s ({up / 8:0.0} MB/s)");
+        SetStatus($"Fertig – ↓ {down:0} Mbit/s · ↑ {up:0} Mbit/s", $"Finished – ↓ {down:0} Mbit/s · ↑ {up:0} Mbit/s");
+        return $"{streams}× · ↓ {down:0.0} Mbit/s · ↑ {up:0.0} Mbit/s";
+    }
+
+    /// <summary>
+    /// One direction with 1…n parallel connections: nc listens on the headset (one per port),
+    /// the PC connects (no firewall rule needed on the PC). No data for 10 s = abort.
+    /// </summary>
+    private async Task<double> RunDirectAttemptAsync(DirectTarget target, int port, double duration, int streams, bool download, CancellationToken token)
+    {
+        CleanupConnection();
+        await StopDeviceNcAsync(port);
+        int[] ports = Enumerable.Range(port, streams).ToArray();
+        SetStatus("Starte Gegenstelle auf dem Gerät...", "Starting counterpart on the device...");
+        string one(int p) => download ? $"toybox nc -l -p {p} < /dev/zero" : $"toybox nc -l -p {p} > /dev/null";
+        _ncProcess = _adb!.Start("shell", string.Join(" & ", ports.Select(one)) + (streams > 1 ? " & wait" : ""));
+
+        SetStatus($"Verbinde mit {target.Address}...", $"Connecting to {target.Address}...");
+        var clients = new List<TcpClient>();
+        foreach (int p in ports)
+        {
+            TcpClient? client = null;
+            for (int i = 0; i < 25 && client is null; i++)
+            {
+                token.ThrowIfCancellationRequested();
+                await Task.Delay(200, token);
+                var c = new TcpClient(target.Address.AddressFamily) { NoDelay = true };
+                try
+                {
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    cts.CancelAfter(2000);
+                    await c.ConnectAsync(target.Address, p, cts.Token);
+                    client = c;
+                }
+                catch when (!token.IsCancellationRequested) { c.Dispose(); }
+            }
+            if (client is null)
+                throw new TimeoutException(Loc.T($"Keine Verbindung zu {target.Address} (Port {p}).", $"No connection to {target.Address} (port {p})."));
+            client.Client.SendBufferSize = client.Client.ReceiveBufferSize = 4 * 1024 * 1024;
+            client.Client.SendTimeout = client.Client.ReceiveTimeout = StallTimeoutMs;
+            clients.Add(client);
+            lock (_directClients) _directClients.Add(client);
+        }
+
+        SetStatus(download ? "Messe Headset → PC..." : "Messe PC → Headset...", download ? "Measuring headset → PC..." : "Measuring PC → headset...");
+        _phase = _chart.AddPhase(download ? Loc.T("↓ Headset → PC", "↓ headset → PC") : Loc.T("↑ PC → Headset", "↑ PC → headset"));
+        _progress.Value = 0;
+        Interlocked.Exchange(ref _liveSent, 0);
+        Volatile.Write(ref _liveElapsed, 0);
+        _liveDuration = duration;
+        _lastUiTime = 0;
+        _lastUiBytes = 0;
+        _liveRunning = true;
+        _uiTimer.Start();
+        try
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            Task<long>[] loops = clients.Select(c => Task.Run(() => StreamLoop(c.Client, duration, download, sw, token), token)).ToArray();
+            long[] totals = await Task.WhenAll(loops);
+            double elapsed = Math.Max(sw.Elapsed.TotalSeconds, 0.000001);
+            long sum = totals.Sum();
+            double average = sum * 8.0 / elapsed / 1_000_000.0;
+            ForceStats(elapsed, duration, sum, average);
+            return average;
+        }
+        finally
+        {
+            _liveRunning = false;
+            _uiTimer.Stop();
+            CleanupConnection();
+            await StopDeviceNcAsync(port);
+        }
+    }
+
+    /// <summary>Worker thread: sends or receives for the test duration and adds to the live counter.</summary>
+    private long StreamLoop(Socket socket, double duration, bool receive, Stopwatch sw, CancellationToken token)
+    {
+        byte[] buffer = new byte[ChunkSize];
+        if (!receive) Array.Fill(buffer, (byte)'X');
+        long total = 0;
+        while (sw.Elapsed.TotalSeconds < duration)
+        {
+            token.ThrowIfCancellationRequested();
+            int n;
+            try
+            {
+                n = receive ? socket.Receive(buffer, 0, buffer.Length, SocketFlags.None)
+                            : socket.Send(buffer, 0, buffer.Length, SocketFlags.None);
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                throw new ConnectionLostException(Loc.T($"Seit {StallTimeoutMs / 1000} s keine Daten mehr – ist das Headset in den Standby gegangen?",
+                                                        $"No data for {StallTimeoutMs / 1000} s – did the headset go to standby?"));
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+            {
+                token.ThrowIfCancellationRequested();
+                throw new ConnectionLostException(ex.Message);
+            }
+            if (n <= 0) throw new ConnectionLostException(Loc.T("Verbindung vom Gerät geschlossen.", "Connection closed by the device."));
+            total += n;
+            Interlocked.Add(ref _liveSent, n);
+            double e = sw.Elapsed.TotalSeconds; // several threads: only move forward
+            if (e > Volatile.Read(ref _liveElapsed)) Volatile.Write(ref _liveElapsed, e);
+        }
+        return total;
+    }
+
+    /// <summary>Quest: proximity sensor off during the test so the headset does not go to standby (restored afterwards).</summary>
+    private async Task KeepAwakeAsync(bool on)
+    {
+        if (_adb is null) return;
+        if (on && !_hmdModel.Contains("Quest", StringComparison.OrdinalIgnoreCase)) return;
+        if (!on && !_proxApplied) return;
+        try
+        {
+            await _adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell",
+                on ? "am broadcast -a com.oculus.vrpowermanager.prox_close" : "am broadcast -a com.oculus.vrpowermanager.automation_disable");
+            _proxApplied = on;
+        }
+        catch { }
+    }
+
+    /// <summary>Ends a leftover netcat listener of this test on the device.</summary>
+    private async Task StopDeviceNcAsync(int port)
+    {
+        if (_adb is null) return;
+        try { await _adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell", "pkill -f 'toybox nc -l -p'"); } catch { }
+    }
+
+    // ------------------------------------------------------------------
+    // Wi-Fi state of the headset during the test (RSSI, link rates, retries)
+    // ------------------------------------------------------------------
+
+    private void StartWifiPolling(AdbClient adb)
+    {
+        _wifiCts?.Cancel();
+        var cts = _wifiCts = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            long? lastRetried = null, lastSuccess = null, lastLost = null;
+            while (!cts.IsCancellationRequested)
+            {
+                try
+                {
+                    AdbResult r = await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell", "cmd wifi status");
+                    string o = r.Output;
+                    int Int(string pattern) => System.Text.RegularExpressions.Regex.Match(o, pattern) is { Success: true } m && int.TryParse(m.Groups[1].Value, out int v) ? v : 0;
+                    long Long(string pattern) => System.Text.RegularExpressions.Regex.Match(o, pattern, System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } m && long.TryParse(m.Groups[1].Value, out long v) ? v : -1;
+                    int rssi = Int(@"RSSI: (-?\d+)");
+                    if (rssi != 0)
+                    {
+                        long retried = Long(@"^retriedTxPackets: (\d+)"), success = Long(@"^successfulTxPackets: (\d+)"), lost = Long(@"^lostTxPackets: (\d+)");
+                        double retry = 0;
+                        long lostDelta = 0;
+                        if (lastRetried is long lr && lastSuccess is long ls && retried >= lr && success >= ls)
+                        {
+                            long dr = retried - lr, ds = success - ls;
+                            retry = dr + ds > 0 ? dr * 100.0 / (dr + ds) : 0;
+                        }
+                        if (lastLost is long ll && lost >= ll) lostDelta = lost - ll;
+                        lastRetried = retried; lastSuccess = success; lastLost = lost;
+                        _chart.Add(new WifiSample(_testClock.Elapsed.TotalSeconds, rssi, Int(@", Tx Link speed: (\d+)"), Int(@", Rx Link speed: (\d+)"), Int(@"Frequency: (\d+)"), retry, lostDelta));
+                    }
+                }
+                catch { }
+                try { await Task.Delay(2000, cts.Token); } catch { break; }
+            }
+        });
+    }
+
+    /// <summary>PNG report + CSV raw data (e.g. as evidence for the manufacturer's support).</summary>
+    private void ExportReport()
+    {
+        try
+        {
+            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ADBora", "Speedtest");
+            string tag = Backup.BackupService.DeviceTag(_hmdModel);
+            string name = $"Speedtest_{tag}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
+            var header = new List<string>
+            {
+                $"ADBora Speedtest – {_hmdModel}",
+                $"{Loc.T("Firmware", "Firmware")}: {_firmware} · {Loc.T("Gerät", "Device")}: {_state.SelectedDevice?.Serial} · {DateTime.Now:yyyy-MM-dd HH:mm}",
+                _testDescription,
+            };
+            if (_chart.Analyze() is { } a) header.Add(a.Summary(!Loc.IsGerman));
+            var (png, csv) = _chart.Export(folder, name, header);
+            Ui.AppendLine(_history, Loc.T($"Bericht gespeichert: {png} / {Path.GetFileName(csv)}", $"Report saved: {png} / {Path.GetFileName(csv)}"));
+            SettingsPage.OpenPath(folder);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     private async Task RemoveReverseAsync(int port)
     {
         if (_adb is null || port <= 0) return;
@@ -674,6 +1194,11 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
     private void CleanupConnection()
     {
+        lock (_directClients)
+        {
+            foreach (TcpClient c in _directClients) try { c.Close(); } catch { }
+            _directClients.Clear();
+        }
         try { _client?.Close(); } catch { }
         try { _listener?.Stop(); } catch { }
         _client = null;
@@ -693,6 +1218,8 @@ internal sealed class SpeedTestPage : UserControl, IPage
         _currentValue.Text = "0.0 Mbit/s";
         _averageValue.Text = "0.0 Mbit/s";
         _lastDisconnectValue.Text = "-";
+        _resultDownValue.Text = "-";
+        _resultUpValue.Text = "-";
         _progress.Value = 0;
         SetStatus("Bereit", "Ready");
         RenderHmd();

@@ -9,6 +9,9 @@
     package="com.adbora.mic">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Mode "ncm": request USB networking (Quest "EthernetOverUsb") for the speed test -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:label="ADBora Mic"

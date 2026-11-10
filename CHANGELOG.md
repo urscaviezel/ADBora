@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.5.8 – 2026-11-10
+
+- DE: Speedtest: neuer Messweg **TCP/IP direkt** (ohne ADB im Datenpfad) über USB-NCM (USB-Netzwerk) oder WLAN,
+  in beide Richtungen (Headset → PC und PC → Headset), mit 1, 4 oder 8 parallelen Verbindungen. Ziele werden
+  automatisch erkannt; bei der Quest schaltet ADBora USB-NCM bei Bedarf selbst ein (wie Virtual Desktop), bei der
+  Play For Dream wird es in den experimentellen Einstellungen aktiviert.
+- DE: Speedtest: **Durchsatz-Verlauf** als Graph mit markierten Einbrüchen und Aussetzern, dazu Signalstärke,
+  Paketwiederholungen und Linkrate des Headset-WLANs; Zusammenfassung (Median, Einbrüche, Aussetzer) und
+  **Bericht als PNG + CSV** (z. B. für den Hersteller-Support).
+- DE: Speedtest: hängt nicht mehr, wenn das Headset in den Standby geht (Abbruch nach 10 s ohne Daten), Quest bleibt
+  während des Tests wach; Ergebnisse je Richtung; kein Flackern der Statuswerte mehr.
+- DE: ADBora Mic (Begleit-App): beendet sich selbst, sobald ADBora trennt (auch bei geschlossenem ADBora oder
+  gezogenem Kabel); öffnet das Mikrofon nach Aussetzern neu.
+- EN: Speed test: new test path **TCP/IP direct** (no ADB in the data path) over USB NCM (USB networking) or Wi-Fi,
+  in both directions (headset → PC and PC → headset), with 1, 4 or 8 parallel connections. Targets are detected
+  automatically; on the Quest ADBora switches USB NCM on by itself when needed (like Virtual Desktop), on the
+  Play For Dream it is enabled in the experimental settings.
+- EN: Speed test: **throughput history** chart with dips and stalls marked, plus signal strength, packet retries and
+  link rate of the headset's Wi-Fi; summary (median, dips, stalls) and **report as PNG + CSV** (e.g. for the
+  manufacturer's support).
+- EN: Speed test: no longer hangs when the headset goes to standby (aborts after 10 s without data), the Quest stays
+  awake during the test; results per direction; no more flickering status values.
+- EN: ADBora Mic (companion app): ends itself as soon as ADBora disconnects (also when ADBora was closed or the cable
+  unplugged); reopens the microphone after dropouts.
+
 ## v1.5.7 – 2026-11-10
 
 - DE: Stream: neuer Modus **Headset-Casting** für Meta Quest und Play For Dream – entzerrtes Bild wie beim

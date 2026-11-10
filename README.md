@@ -34,7 +34,7 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 | **1 · Allgemeine Einstellungen** | Sprache, ADB einrichten (adb.exe wählen, automatisch suchen, Platform-Tools-Download, Einrichtungshilfe), Versionen (ADBora, ADB, Platform-Tools, .NET, Windows), Datenablage, angeschlossene Geräte, WLAN-ADB, Geräteinformationen (Hersteller, Modell, IPv4-Adresse, Android-Version, Sicherheitspatch, Chipsatz, RAM, Speicher, Akku, Display, Laufzeit) |
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
-| **4 · Speedtest** | ADB-Durchsatztest über USB oder WLAN: maximale stabile Transferrate (automatische Reduktion bei Abbrüchen) oder feste Bandbreite; Live-Werte und Verlauf |
+| **4 · Speedtest** | Durchsatztest über ADB (USB oder WLAN) oder **TCP/IP direkt** (USB-NCM oder WLAN, beide Richtungen, parallele Verbindungen); Verlaufsgraph mit Einbrüchen/Aussetzern und WLAN-Daten des Headsets, Bericht als PNG + CSV |
 | **5 · Stream (Beta)** | **Headset-Casting** für Meta Quest und Play For Dream: entzerrtes Bild mit Ton und Mikrofon über USB, MKV-Aufnahme, Screenshot. Für alle anderen Android-Geräte **scrcpy** (rohes Display, Ausschnitt/Drehung, Ton, MP4-Aufnahme) |
 | **6 · Performance** | Leistungswerte live per ADB (FPS, Frame-Zeiten, CPU-/GPU-Last, Takt, Temperaturen, Akku, RAM …) für Play For Dream und Meta Quest, Auswahl der Werte und Graphen, CSV-Protokoll, HUD-App im Headset ein-/ausschalten bzw. installieren |
 | **7 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
@@ -129,6 +129,22 @@ PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc (Gerät) → /dev/null
 
 Es wird nichts auf dem Gerät gespeichert. Der Wert ist der Durchsatz dieses
 ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
+
+**TCP/IP direkt** misst ohne ADB im Datenpfad, in beide Richtungen und optional mit
+4 oder 8 parallelen Verbindungen (vergleichbar mit Online-Speedtests):
+
+```text
+PC ↔ Netzwerkadapter (USB-NCM oder WLAN) ↔ toybox nc (Gerät)
+```
+
+- **USB-NCM** (USB-Netzwerk über das Kabel): Bei der Quest schaltet ADBora es bei Bedarf
+  über die Begleit-App selbst ein (wie Virtual Desktop; beim allerersten Mal fragt die
+  Quest um Erlaubnis), bei der Play For Dream in den experimentellen Einstellungen
+  aktivieren. Verbunden wird über IPv6 Link-Local, ohne DHCP und ohne Firewall-Regel.
+- **Verlaufsgraph:** Rate alle 0,25 s, Einbrüche (unter 50 % des Medians) gelb,
+  Aussetzer rot; bei WLAN-Tests zusätzlich RSSI, Paketwiederholungen und Linkrate des
+  Headsets. **Bericht speichern** legt PNG + CSV unter `Dokumente\ADBora\Speedtest` ab.
+- Eine Quest bleibt während des Tests wach; kommen 10 s keine Daten, bricht der Test ab.
 
 ### Stream (Beta)
 
@@ -271,7 +287,7 @@ backups are never deleted. The current data location is shown in
 | **1 · General settings** | Language, ADB setup (choose adb.exe, auto search, Platform-Tools download, setup help), versions (ADBora, ADB, Platform-Tools, .NET, Windows), data storage, connected devices, Wi-Fi ADB, device information (manufacturer, model, IPv4 address, Android version, security patch, chipset, RAM, storage, battery, display, uptime) |
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
-| **4 · Speed test** | ADB throughput test via USB or Wi-Fi: maximum stable transfer rate (automatic reduction on disconnects) or fixed bandwidth; live values and history |
+| **4 · Speed test** | Throughput test via ADB (USB or Wi-Fi) or **TCP/IP direct** (USB NCM or Wi-Fi, both directions, parallel connections); history chart with dips/stalls and the headset's Wi-Fi data, report as PNG + CSV |
 | **5 · Stream (beta)** | **Headset casting** for Meta Quest and Play For Dream: undistorted picture with audio and microphone over USB, MKV recording, screenshot. For all other Android devices **scrcpy** (raw display, view/rotation, audio, MP4 recording) |
 | **6 · Performance** | Live performance values via ADB (FPS, frame times, CPU/GPU load, clocks, temperatures, battery, RAM …) for Play For Dream and Meta Quest, choice of values and graphs, CSV log, switch or install the HUD app on the headset |
 | **7 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
@@ -352,6 +368,22 @@ PC TCP sender → adb reverse → USB/Wi-Fi → toybox nc (device) → /dev/null
 
 Nothing is written to the device. The value is the throughput of this ADB/TCP
 path, not the theoretical bus speed.
+
+**TCP/IP direct** measures without ADB in the data path, in both directions and
+optionally with 4 or 8 parallel connections (comparable to online speed tests):
+
+```text
+PC ↔ network adapter (USB NCM or Wi-Fi) ↔ toybox nc (device)
+```
+
+- **USB NCM** (USB networking over the cable): on the Quest ADBora switches it on by
+  itself via the companion app when needed (like Virtual Desktop; the very first time
+  the Quest asks for permission), on the Play For Dream enable it in the experimental
+  settings. The connection uses IPv6 link-local, no DHCP and no firewall rule needed.
+- **History chart:** rate every 0.25 s, dips (below 50 % of the median) yellow, stalls
+  red; for Wi-Fi tests also RSSI, packet retries and link rate of the headset. **Save
+  report** stores PNG + CSV in `Documents\ADBora\Speedtest`.
+- A Quest stays awake during the test; with no data for 10 s the test aborts.
 
 ### Stream (beta)
 

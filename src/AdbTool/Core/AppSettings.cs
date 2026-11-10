@@ -1,4 +1,4 @@
-using System.Text.Encodings.Web;
+﻿using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -80,6 +80,8 @@ internal sealed class AppSettings
     public int SpeedPort { get; set; } = 5001;
     public double SpeedRateMbps { get; set; } = 1900;
     public double SpeedDurationSeconds { get; set; } = 600;
+    public bool SpeedDirect { get; set; }
+    public int SpeedStreams { get; set; } = 1;
 
     // ADB commands
     public bool CommandTargetSelectedDevice { get; set; } = true;
