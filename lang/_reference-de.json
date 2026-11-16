@@ -293,7 +293,7 @@
   "Folder is empty: {0}": "Ordner ist leer: {0}",
   "Folder is inaccessible": "Ordner ist nicht zugänglich",
   "Folder named after the package (e.g. com.company.game) or .obb files – target: /sdcard/Android/obb/<package>": "Ordner mit dem Paketnamen (z. B. com.firma.spiel) oder .obb-Dateien – Ziel: /sdcard/Android/obb/<Paket>",
-  "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.": "Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; das Casting der Hersteller schickt das Mikrofon nicht mit.",
+  "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; this way the microphone works the same on both headsets (Play For Dream's casting does not send it).": "Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; so funktioniert das Mikrofon bei beiden Headsets gleich (das Casting der Play For Dream schickt es nicht mit).",
   "For this display a screenshot is only possible while a stream is running. Please \"Start stream\" first.": "Für dieses Display ist ein Screenshot nur während eines laufenden Streams möglich. Bitte zuerst „Stream starten“.",
   "Forces 120 Hz (Quest 2/3/3S/Pro). Costs battery and performance. Lasts until reboot.": "Erzwingt 120 Hz (Quest 2/3/3S/Pro). Kostet Akku und Leistung. Gilt bis zum Neustart.",
   "Forces 72 Hz for apps that support it. Lasts until reboot.": "Erzwingt 72 Hz für Apps, die es unterstützen. Gilt bis zum Neustart.",

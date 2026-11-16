@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AdbTool.Core;
 using AdbTool.UI;
@@ -451,7 +451,9 @@ internal sealed class SettingsPage : UserControl, IPage
             string sdk = P("ro.build.version.sdk");
             _info = new List<(string, string, string)>
             {
-                ("Hersteller", "Manufacturer", P("ro.product.manufacturer", "ro.product.vendor.manufacturer")),
+                // Quests still report "Oculus"; the brand has been Meta for years.
+                ("Hersteller", "Manufacturer", P("ro.product.manufacturer", "ro.product.vendor.manufacturer") is var maker
+                    && maker.Equals("Oculus", StringComparison.OrdinalIgnoreCase) ? "Meta" : maker),
                 ("Modell", "Model", P("ro.product.model", "ro.product.vendor.model")),
                 ("Gerät / Codename", "Device / codename", P("ro.product.device", "ro.product.vendor.device")),
                 ("Seriennummer", "Serial number", device.Serial),
@@ -459,7 +461,9 @@ internal sealed class SettingsPage : UserControl, IPage
                 ("IPv4-Adresse", "IPv4 address", ipText),
                 ("Android-Version", "Android version", $"{P("ro.build.version.release")} (API {sdk})"),
                 ("Sicherheitspatch", "Security patch", P("ro.build.version.security_patch")),
-                ("Build", "Build", P("ro.build.display.id")),
+                ("Build", "Build", int.TryParse(P("ro.vros.build.version"), out int hzos) && hzos > 0
+                    ? $"Horizon OS {(hzos >= 200 ? $"v{hzos / 100}.{hzos % 100}" : $"v{hzos}")} ({P("ro.build.display.id")})" // 209 → v2.9
+                    : P("ro.build.display.id")),
                 ("Chipsatz", "Chipset", P("ro.soc.model", "ro.board.platform", "ro.hardware")),
                 ("CPU-ABI", "CPU ABI", P("ro.product.cpu.abilist", "ro.product.cpu.abi")),
                 ("Arbeitsspeicher", "Memory (RAM)", ram),

@@ -161,8 +161,8 @@ Handy-App oder Meta-Konto:
   Stream per `adb forward`; Einzelauge 1280 × 720, Ton als AAC. Miracast vorher beenden.
   Geschützte Inhalte (DRM, Browser) zeigt die PFD auch hier nicht.
 - Ton des Headsets am PC (während des Streams ein-/ausschaltbar), Lautstärke pro Headset.
-- **Mikrofon:** Das Casting der Hersteller schickt das Mikrofon nicht mit. Dafür installiert
-  ADBora bei Bedarf die kleine Begleit-App **ADBora Mic** (`companion/mic`, Open Source,
+- **Mikrofon:** Das Casting der Play For Dream schickt das Mikrofon nicht mit; damit es bei
+  beiden Headsets gleich funktioniert, installiert ADBora bei Bedarf die kleine Begleit-App **ADBora Mic** (`companion/mic`, Open Source,
   ohne Netzwerkzugriff, kein Fenster); sie läuft nur während des Streams.
 - Aufnahme als **MKV** mit Ton und Mikrofon (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
 - Stream-Fenster: Doppelklick/F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot,
@@ -400,8 +400,8 @@ Meta account:
   `adb forward`; single eye 1280 × 720, audio as AAC. Stop Miracast first. Protected content
   (DRM, browser) is not shown by the PFD here either.
 - Headset audio on the PC (can be switched on/off while streaming), volume per headset.
-- **Microphone:** the manufacturers' casting does not send the microphone. For this ADBora
-  installs the small companion app **ADBora Mic** when needed (`companion/mic`, open source,
+- **Microphone:** Play For Dream's casting does not send the microphone; so that it works the
+  same on both headsets, ADBora installs the small companion app **ADBora Mic** when needed (`companion/mic`, open source,
   no network access, no window); it only runs while streaming.
 - **MKV** recording with audio and microphone (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - Stream window: double-click/F11 = full screen, Esc = leave full screen, F12 = screenshot,

@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.9 – 2026-11-16
+
+- DE: Speedtest-Bericht (PNG): Kopf mit Headset-Typ, Firmware, Messweg und Zusammenfassung wird jetzt angezeigt
+  (wurde vom Graphen übermalt); Seriennummer nicht mehr im Bericht; bei der Quest Horizon-OS-Version (z. B. v2.9).
+- DE: Geräteinformationen: Quest-Hersteller als „Meta“ statt „Oculus“, Build mit Horizon-OS-Version.
+- DE: Stream: Hinweis zum Mikrofon korrigiert (nur die Play For Dream schickt es im Casting nicht mit).
+- EN: Speed test report (PNG): header with headset type, firmware, test path and summary is now shown (it was
+  painted over by the chart); serial number no longer in the report; Horizon OS version (e.g. v2.9) on the Quest.
+- EN: Device info: Quest manufacturer shown as "Meta" instead of "Oculus", build with Horizon OS version.
+- EN: Stream: microphone hint corrected (only Play For Dream's casting does not send it).
+
 ## v1.5.8 – 2026-11-10
 
 - DE: Speedtest: neuer Messweg **TCP/IP direkt** (ohne ADB im Datenpfad) über USB-NCM (USB-Netzwerk) oder WLAN,

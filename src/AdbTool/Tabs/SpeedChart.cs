@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Text;
 using AdbTool.Core;
@@ -129,7 +129,8 @@ internal sealed class SpeedChart : Control
     /// <summary>Draws the chart (also used for the PNG report).</summary>
     private void Draw(Graphics g, Rectangle area, float k)
     {
-        g.Clear(Theme.Card);
+        // Only the own area: the PNG report draws its header above it on the same bitmap.
+        using (var bg = new SolidBrush(Theme.Card)) g.FillRectangle(bg, area);
         RateSample[] samples;
         WifiSample[] wifi;
         string[] phases;

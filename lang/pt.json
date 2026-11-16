@@ -2,7 +2,7 @@
   "_meta": {
     "code": "pt",
     "name": "Português",
-    "version": "1.5.8",
+    "version": "1.5.9",
     "app": "ADBora",
     "translator": "Claude (AI) – corrections by native speakers welcome"
   },
@@ -300,7 +300,7 @@
   "Folder is empty: {0}": "A pasta está vazia: {0}",
   "Folder is inaccessible": "Pasta inacessível",
   "Folder named after the package (e.g. com.company.game) or .obb files – target: /sdcard/Android/obb/<package>": "Pasta com o nome do pacote (por ex. com.company.game) ou arquivos .obb – destino: /sdcard/Android/obb/<package>",
-  "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.": "Para isso, o ADBora instala uma única vez no headset o pequeno app complementar \"ADBora Mic\" (código aberto, sem acesso à rede); o casting dos fabricantes não envia o microfone.",
+  "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; this way the microphone works the same on both headsets (Play For Dream's casting does not send it).": "Para isso, o ADBora instala uma única vez no headset o pequeno app complementar \"ADBora Mic\" (código aberto, sem acesso à rede); assim o microfone funciona da mesma forma nos dois headsets (o casting do Play For Dream não o envia).",
   "For this display a screenshot is only possible while a stream is running. Please \"Start stream\" first.": "Para esta tela, a captura só é possível com um stream em andamento. Primeiro clique em \"Iniciar stream\".",
   "Forces 120 Hz (Quest 2/3/3S/Pro). Costs battery and performance. Lasts until reboot.": "Força 120 Hz (Quest 2/3/3S/Pro). Consome bateria e desempenho. Vale até reiniciar.",
   "Forces 72 Hz for apps that support it. Lasts until reboot.": "Força 72 Hz em apps compatíveis. Vale até reiniciar.",

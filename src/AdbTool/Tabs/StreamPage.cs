@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.RegularExpressions;
 using AdbTool.Backup;
 using AdbTool.Cast;
@@ -821,8 +821,8 @@ internal sealed class StreamPage : UserControl, IPage
             _state.Settings.Save();
             if (_cast is not null) await ApplyMicAsync(_cast);
         };
-        var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; das Casting der Hersteller schickt das Mikrofon nicht mit.",
-                               "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.", muted: true);
+        var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; so funktioniert das Mikrofon bei beiden Headsets gleich (das Casting der Play For Dream schickt es nicht mit).",
+                               "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; this way the microphone works the same on both headsets (Play For Dream's casting does not send it).", muted: true);
         Ui.WrapTo(micHint, this, 200);
         Ui.AddRow(grid, new Label { Width = 1 }, _castMic);
         Ui.AddRow(grid, new Label { Width = 1 }, micHint);

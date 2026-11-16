@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -481,7 +481,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             _hmdChecked = true;
             RenderHmd();
             await KeepAwakeAsync(true);
-            _firmware = (await _adb!.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell", "getprop ro.build.display.id")).Output.Trim();
+            _firmware = await GetFirmwareAsync();
             _chart.Clear();
             _export.Enabled = false;
             _lastAnalysisT = 0;
@@ -1162,8 +1162,8 @@ internal sealed class SpeedTestPage : UserControl, IPage
             string name = $"Speedtest_{tag}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
             var header = new List<string>
             {
-                $"ADBora Speedtest – {_hmdModel}",
-                $"{Loc.T("Firmware", "Firmware")}: {_firmware} · {Loc.T("Gerät", "Device")}: {_state.SelectedDevice?.Serial} · {DateTime.Now:yyyy-MM-dd HH:mm}",
+                $"ADBora Speedtest – {DisplayModel(_hmdModel)}",
+                $"{Loc.T("Firmware", "Firmware")}: {(_firmware.Length > 0 ? _firmware : "?")} · {DateTime.Now:yyyy-MM-dd HH:mm}",
                 _testDescription,
             };
             if (_chart.Analyze() is { } a) header.Add(a.Summary(!Loc.IsGerman));
@@ -1175,6 +1175,33 @@ internal sealed class SpeedTestPage : UserControl, IPage
         {
             MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    /// <summary>Firmware for reports: on Meta Quest the Horizon OS version (ro.vros.build.version 209 → "v2.9",
+    /// before v200 e.g. 78 → "v78") plus build id, otherwise ro.build.display.id.</summary>
+    private async Task<string> GetFirmwareAsync()
+    {
+        try
+        {
+            string[] p = (await _adb!.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell",
+                "getprop ro.build.display.id; getprop ro.vros.build.version")).Output.Replace("\r", "").Split('\n');
+            string build = p.Length > 0 ? p[0].Trim() : "";
+            if (p.Length > 1 && int.TryParse(p[1].Trim(), out int v) && v > 0)
+                return $"Horizon OS {(v >= 200 ? $"v{v / 100}.{v % 100}" : $"v{v}")} ({build})";
+            return build;
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Readable headset name for reports, e.g. "PFDM MR" → "Play For Dream MR (PFDMR)", "Quest_3" → "Quest 3".</summary>
+    private static string DisplayModel(string model)
+    {
+        string m = (model ?? "").Trim();
+        if (m.Length == 0) return "?";
+        if (m.Contains("PFDM", StringComparison.OrdinalIgnoreCase)) return "Play For Dream MR (PFDMR)";
+        m = m.Replace('_', ' ');
+        if (m.StartsWith("Quest", StringComparison.OrdinalIgnoreCase)) return "Meta " + m;
+        return m;
     }
 
     private async Task RemoveReverseAsync(int port)
