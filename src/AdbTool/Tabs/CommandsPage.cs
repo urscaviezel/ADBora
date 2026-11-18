@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using AdbTool.Core;
@@ -492,7 +492,7 @@ internal sealed class CommandsPage : UserControl, IPage
                 : _state.IsBusy
                     ? Loc.T("Ein anderer ADB-Vorgang läuft gerade.", "Another ADB operation is running.")
                     : _state.SelectedDevice is { } d
-                        ? Loc.T($"Aktives Gerät: {d.DisplayName} ({d.Serial})", $"Active device: {d.DisplayName} ({d.Serial})")
+                        ? Loc.T($"Aktives Gerät: {d.DisplayName} ({d.ShownSerial})", $"Active device: {d.DisplayName} ({d.ShownSerial})")
                         : Loc.T("Kein Gerät ausgewählt – nur Host-Befehle (z. B. devices, version) sinnvoll.", "No device selected – only host commands (e.g. devices, version) make sense.");
         }
     }
@@ -744,7 +744,7 @@ internal sealed class CommandsPage : UserControl, IPage
             _output.SelectionStart = _output.TextLength;
             _output.SelectionLength = 0;
             _output.SelectionColor = color ?? Theme.Text;
-            _output.AppendText(sb.ToString());
+            _output.AppendText(Privacy.MaskPaths(sb.ToString()));
             sb.Clear();
         }
 

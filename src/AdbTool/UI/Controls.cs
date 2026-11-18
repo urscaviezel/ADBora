@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using AdbTool.Core;
@@ -1118,7 +1118,7 @@ internal static class Ui
         {
             box.Text = box.Text[^(maxChars / 2)..];
         }
-        box.AppendText(text.Replace("\r\n", "\n").Replace("\n", Environment.NewLine) + Environment.NewLine);
+        box.AppendText(Privacy.MaskPaths(text).Replace("\r\n", "\n").Replace("\n", Environment.NewLine) + Environment.NewLine);
     }
 
     public static TableLayoutPanel Grid(int columns)

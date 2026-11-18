@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Text.RegularExpressions;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AdbTool.Core;
 using AdbTool.UI;
@@ -13,6 +14,7 @@ internal sealed class SettingsPage : UserControl, IPage
     private readonly Label _languageName = new() { AutoSize = true, ForeColor = Theme.Text, BackColor = Color.Transparent, Font = Theme.BaseFont, Margin = new Padding(0, 9, 12, 4) };
     private readonly DarkButton _language = Ui.Button("Sprache ändern", "Change language");
     private readonly CheckBox _stopServer = Ui.CheckBox("ADB-Server beim Beenden stoppen", "Stop ADB server on exit");
+    private readonly CheckBox _hideSerial = Ui.CheckBox("Seriennummern und Benutzerordner ausblenden (z. B. für Screenshots)", "Hide serial numbers and user folder (e.g. for screenshots)");
 
     private readonly TextBox _adbPath = Ui.TextBox(420);
     private readonly Label _adbStatus = Ui.Value();
@@ -27,6 +29,7 @@ internal sealed class SettingsPage : UserControl, IPage
     private readonly TableLayoutPanel _deviceInfo = Ui.Grid(2);
     private readonly Label _deviceInfoStatus = Ui.Value("");
     private readonly TextBox _connectAddress = Ui.TextBox(260);
+    private string? _autoAddress; // last address ADBora put into _connectAddress itself
     private readonly DarkButton _refreshInfo = Ui.Button("Infos aktualisieren", "Refresh info");
     private readonly DarkButton _copyInfo = Ui.Button("Kopieren", "Copy");
     private readonly DarkButton _connect = Ui.Button("WLAN verbinden", "Connect Wi-Fi");
@@ -47,8 +50,8 @@ internal sealed class SettingsPage : UserControl, IPage
         BuildUi();
 
         _state.AdbChanged += UpdateAdbInfo;
-        _state.DevicesChanged += UpdateDeviceList;
-        _state.SelectedDeviceChanged += () => { UpdateDeviceList(); if (Visible) _ = LoadDeviceInfoAsync(); };
+        _state.DevicesChanged += () => { UpdateDeviceList(); SyncConnectAddress(); };
+        _state.SelectedDeviceChanged += () => { UpdateDeviceList(); SyncConnectAddress(); if (Visible) _ = LoadDeviceInfoAsync(); };
         _state.BusyChanged += UpdateEnabled;
         Loc.LanguageChanged += () => { UpdateAdbInfo(); UpdateDeviceList(); RenderInfo(); };
 
@@ -110,13 +113,22 @@ internal sealed class SettingsPage : UserControl, IPage
         };
         Ui.AddRow(generalGrid, Ui.Label("Sprache / Language", "Language / Sprache", muted: true), Ui.Row(_languageName, _language));
         Ui.AddRow(generalGrid, new Label { Width = 1 }, _stopServer);
+        _hideSerial.Checked = _state.Settings.HideSerial;
+        _hideSerial.CheckedChanged += (_, _) =>
+        {
+            _state.Settings.HideSerial = _hideSerial.Checked;
+            _state.Settings.Save();
+            Privacy.HideSerial = _hideSerial.Checked;
+        };
+        Privacy.Changed += () => { UpdateDeviceList(); RenderDataMode(); UpdateAdbInfo(); if (Visible) _ = LoadDeviceInfoAsync(); };
+        Ui.AddRow(generalGrid, new Label { Width = 1 }, _hideSerial);
         Ui.AddRow(generalGrid, Ui.Label("ADBora", "ADBora", muted: true), _toolVersion);
         Ui.AddRow(generalGrid, Ui.Label(".NET-Laufzeit", ".NET runtime", muted: true), _dotnetVersion);
         Ui.AddRow(generalGrid, Ui.Label("Betriebssystem", "Operating system", muted: true), _osVersion);
         Ui.AddRow(generalGrid, Ui.Label("Datenablage", "Data storage", muted: true), _dataMode);
         void RenderDataMode() => _dataMode.Text = (AppSettings.IsPortable
             ? Loc.T("Portabel", "Portable")
-            : Loc.T("Installiert", "Installed")) + " · " + AppSettings.DataDirectory;
+            : Loc.T("Installiert", "Installed")) + " · " + Privacy.MaskPaths(AppSettings.DataDirectory);
         RenderDataMode();
         Loc.LanguageChanged += RenderDataMode;
         Ui.WrapTo(_dataMode, general, 150);
@@ -270,7 +282,7 @@ internal sealed class SettingsPage : UserControl, IPage
 
     private void UpdateAdbInfo()
     {
-        _adbPath.Text = _state.AdbPath ?? "";
+        _adbPath.Text = Privacy.MaskPaths(_state.AdbPath ?? "");
         if (!_state.HasAdb)
         {
             _adbStatus.Text = Loc.T("✖ adb.exe nicht gefunden – bitte einrichten.", "✖ adb.exe not found – please set it up.");
@@ -324,7 +336,7 @@ internal sealed class SettingsPage : UserControl, IPage
             dot.ForeColor = d.IsReady ? Theme.Accent : Theme.Warning;
             var name = Ui.Value(d.DisplayName + (active ? Loc.T("  (aktiv)", "  (active)") : ""));
             name.Font = active ? Theme.BoldFont : Theme.BaseFont;
-            var serial = Ui.Value(d.Serial + (d.Serial.Contains(':') ? "  (WLAN)" : "  (USB)"));
+            var serial = Ui.Value(d.ShownSerial + (d.Serial.Contains(':') ? "  (WLAN)" : "  (USB)"));
             serial.ForeColor = Theme.Muted;
             var state = Ui.Value(d.StateText);
             state.ForeColor = d.IsReady ? Theme.Accent : Theme.Warning;
@@ -364,7 +376,12 @@ internal sealed class SettingsPage : UserControl, IPage
         {
             const string sep = "@@ADBTOOL@@";
             string script = string.Join($"; echo {sep}; ",
-                "getprop", "dumpsys battery", "df -h /data", "cat /proc/meminfo", "wm size", "wm density", "uptime", "ip -4 -o addr show");
+                "getprop", "dumpsys battery", "df -h /data", "cat /proc/meminfo", "wm size", "wm density", "uptime", "ip -4 -o addr show",
+                "dumpsys usb",
+                // USB interfaces bound to a network driver (r8152, cdc_ncm, ax88179_178a, …)
+                "for d in /sys/bus/usb/drivers/*; do for i in $d/*:*; do [ -e \"$i\" ] && echo \"${d##*/} ${i##*/}\"; done; done",
+                // link speed from the kernel log (readable on the Quest)
+                "logcat -d -b all -t 3000 2>/dev/null | grep -E 'eth[0-9]+: [0-9]+ mbit/s' | tail -1");
             AdbResult result = await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(30), "shell", script);
             if (request != _infoRequest) return;
             if (!result.Ok && string.IsNullOrWhiteSpace(result.Output))
@@ -456,7 +473,7 @@ internal sealed class SettingsPage : UserControl, IPage
                     && maker.Equals("Oculus", StringComparison.OrdinalIgnoreCase) ? "Meta" : maker),
                 ("Modell", "Model", P("ro.product.model", "ro.product.vendor.model")),
                 ("Gerät / Codename", "Device / codename", P("ro.product.device", "ro.product.vendor.device")),
-                ("Seriennummer", "Serial number", device.Serial),
+                ("Seriennummer", "Serial number", device.ShownSerial),
                 ("Verbindung", "Connection", device.Serial.Contains(':') ? "WLAN / TCP" : "USB"),
                 ("IPv4-Adresse", "IPv4 address", ipText),
                 ("Android-Version", "Android version", $"{P("ro.build.version.release")} (API {sdk})"),
@@ -472,6 +489,7 @@ internal sealed class SettingsPage : UserControl, IPage
                 ("Display", "Display", display.Length > 0 ? display : "-"),
                 ("Laufzeit", "Uptime", uptime.Length > 0 ? uptime : "-"),
             };
+            _info.AddRange(EthernetInfo(Part(7), Part(8), Part(9), Part(10), device.Serial.Contains(':')));
             _deviceInfoStatus.Text = Loc.T($"Stand: {DateTime.Now:HH:mm:ss}", $"As of {DateTime.Now:HH:mm:ss}");
         }
         catch (Exception ex)
@@ -537,6 +555,82 @@ internal sealed class SettingsPage : UserControl, IPage
         !r.Combined.Contains("unable", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>IPv4 addresses (without loopback) of a device connected via USB.</summary>
+    private static readonly Dictionary<string, string> EthernetChips = new()
+    {
+        ["0BDA:8150"] = "Realtek RTL8150 · 100 Mbit/s", ["0BDA:8152"] = "Realtek RTL8152 · 100 Mbit/s",
+        ["0BDA:8153"] = "Realtek RTL8153 · 1 Gbit/s",   ["0BDA:8155"] = "Realtek RTL8155 · 2.5 Gbit/s",
+        ["0BDA:8156"] = "Realtek RTL8156 · 2.5 Gbit/s", ["0BDA:8157"] = "Realtek RTL8157 · 5 Gbit/s",
+        ["0BDA:8159"] = "Realtek RTL8159 · 10 Gbit/s",
+        ["0B95:1790"] = "ASIX AX88179 · 1 Gbit/s",      ["0B95:178A"] = "ASIX AX88178A · 1 Gbit/s",
+        ["0B95:7720"] = "ASIX AX88772 · 100 Mbit/s",    ["0B95:772A"] = "ASIX AX88772A · 100 Mbit/s",
+        ["0B95:772B"] = "ASIX AX88772B · 100 Mbit/s",   ["0B95:7E2B"] = "ASIX AX88772C · 100 Mbit/s",
+        ["2EB9:1700"] = "Aquantia AQC111U · 5 Gbit/s",
+    };
+
+    private static readonly string[] NetDrivers = { "r8152", "cdc_ncm", "cdc_ether", "cdc_eem", "ax88179_178a", "asix", "aqc111", "rtl8150" };
+
+    /// <summary>
+    /// USB Ethernet adapter on the headset (for support): name and chip from "dumpsys usb"
+    /// (host devices), driver from /sys/bus/usb/drivers, link speed from the kernel log if
+    /// readable. Only shown when an eth interface has an address – plus a hint when the
+    /// USB-C port is in charging mode (an adapter with power pass-through is then ignored).
+    /// </summary>
+    private static IEnumerable<(string, string, string)> EthernetInfo(string ipAddr, string usb, string drivers, string kernel, bool networkAdb)
+    {
+        var eth = Regex.Matches(ipAddr, @"^\d+:\s+(eth\d+)\s+inet\s+([\d.]+)", RegexOptions.Multiline)
+            .Select(m => (If: m.Groups[1].Value, Ip: m.Groups[2].Value)).ToList();
+        if (eth.Count == 0)
+        {
+            if (networkAdb && Regex.IsMatch(usb, @"current_mode=ufp") && Regex.IsMatch(usb, @"sink_power=true") && Regex.IsMatch(usb, @"host_connected=false"))
+                yield return ("USB-C-Port", "USB-C port", Loc.T(
+                    "Lademodus – ein Ethernet-Adapter mit Ladeanschluss wird so nicht erkannt; Adapter zuerst ohne Ladegerät einstecken.",
+                    "Charging mode – an Ethernet adapter with a charging port is not detected this way; plug in the adapter without the charger first."));
+            yield break;
+        }
+
+        // host devices: "name=/dev/bus/usb/… vendor_id=… product_id=… class=… manufacturer_name=… product_name=…"
+        int hm = usb.IndexOf("host_manager={", StringComparison.Ordinal);
+        string host = hm >= 0 ? usb[hm..] : "";
+        var devices = Regex.Matches(host, @"name=/dev/bus/usb/\S+\s+vendor_id=(\d+)\s+product_id=(\d+)\s+class=(\d+)[\s\S]*?manufacturer_name=([^\n]*)\n\s*product_name=([^\n]*)")
+            .Select(m => (Id: $"{int.Parse(m.Groups[1].Value):X4}:{int.Parse(m.Groups[2].Value):X4}", Class: m.Groups[3].Value,
+                          Name: $"{m.Groups[4].Value.Trim()} {m.Groups[5].Value.Trim()}".Replace("null", "").Trim()))
+            .Where(d => d.Class != "9") // hubs
+            .ToList();
+        var adapter = devices.FirstOrDefault(d => EthernetChips.ContainsKey(d.Id));
+        if (adapter.Id is null) adapter = devices.FirstOrDefault(d => Regex.IsMatch(d.Name, "LAN|Ethernet|Network|GbE", RegexOptions.IgnoreCase));
+        if (adapter.Id is null && devices.Count == 1) adapter = devices[0];
+        if (adapter.Id is not null)
+        {
+            string chip = EthernetChips.TryGetValue(adapter.Id, out string? c) ? c : "";
+            yield return ("USB-Ethernet-Adapter", "USB Ethernet adapter",
+                string.Join(" · ", new[] { adapter.Name, chip, adapter.Id }.Where(x => x.Length > 0)));
+        }
+
+        string driver = drivers.Split('\n').Select(l => l.Trim().Split(' ')[0]).FirstOrDefault(d => NetDrivers.Contains(d)) ?? "";
+        foreach (var e in eth)
+        {
+            Match speed = Regex.Match(kernel, $@"{e.If}: (\d+) mbit/s");
+            string link = speed.Success ? (int.Parse(speed.Groups[1].Value) is int mb && mb >= 1000 ? $"{mb / 1000.0:0.#} Gbit/s" : $"{speed.Groups[1].Value} Mbit/s") : "";
+            yield return ("Ethernet-Verbindung", "Ethernet connection",
+                string.Join(" · ", new[] { e.If, e.Ip, link, driver.Length > 0 ? Loc.T("Treiber", "driver") + " " + driver : "" }.Where(x => x.Length > 0)));
+        }
+    }
+
+    /// <summary>
+    /// Address field follows the selection: the address of the selected Wi-Fi device, empty for a
+    /// USB device (= "use its IP"). An address the user typed in is left alone.
+    /// </summary>
+    private void SyncConnectAddress()
+    {
+        string current = _connectAddress.Text.Trim();
+        if (current.Length > 0 && current != _autoAddress) return;
+        AdbDevice? sel = _state.SelectedDevice;
+        string next = sel is { IsReady: true } && sel.Serial.Contains(':') ? sel.Serial : "";
+        if (next == current) return;
+        _connectAddress.Text = next;
+        _autoAddress = next.Length > 0 ? next : null;
+    }
+
     private static async Task<List<string>> DeviceIpsAsync(AdbClient adb)
     {
         var result = new List<string>();
@@ -586,6 +680,16 @@ internal sealed class SettingsPage : UserControl, IPage
             var usb = _state.Devices.Where(d => d.IsReady && !d.Serial.Contains(':'))
                 .OrderByDescending(d => d.Serial == _state.SelectedDevice?.Serial).ToList();
 
+            // The field still shows the address of an earlier connection (e.g. a second headset is
+            // now on USB): if that device is already connected via Wi-Fi, or ADBora filled the field
+            // itself, use the IP of the USB device instead.
+            if (address.Length > 0 && usb.Count > 0)
+            {
+                string normalized = address.Contains(':') ? address : address + ":5555";
+                if (normalized == _autoAddress || _state.Devices.Any(d => d.IsReady && d.Serial == normalized))
+                    address = "";
+            }
+
             string host, port = "5555";
             AdbDevice? usbDevice = null;
             if (address.Length == 0)
@@ -619,7 +723,7 @@ internal sealed class SettingsPage : UserControl, IPage
                 }
             }
             string target = $"{host}:{port}";
-            _connectAddress.Text = target;
+            _connectAddress.Text = _autoAddress = target;
 
             // A stale (offline) entry would answer "already connected" – remove it first.
             if (_state.Devices.FirstOrDefault(d => d.Serial == target) is { IsReady: false })

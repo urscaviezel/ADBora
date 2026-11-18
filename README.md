@@ -31,11 +31,11 @@ Die aktuelle Datenablage steht im Tab „Allgemeine Einstellungen“ → „Date
 
 | Tab | Inhalt |
 |---|---|
-| **1 · Allgemeine Einstellungen** | Sprache, ADB einrichten (adb.exe wählen, automatisch suchen, Platform-Tools-Download, Einrichtungshilfe), Versionen (ADBora, ADB, Platform-Tools, .NET, Windows), Datenablage, angeschlossene Geräte, WLAN-ADB, Geräteinformationen (Hersteller, Modell, IPv4-Adresse, Android-Version, Sicherheitspatch, Chipsatz, RAM, Speicher, Akku, Display, Laufzeit) |
+| **1 · Allgemeine Einstellungen** | Sprache, ADB einrichten (adb.exe wählen, automatisch suchen, Platform-Tools-Download, Einrichtungshilfe), Versionen (ADBora, ADB, Platform-Tools, .NET, Windows), Datenablage, angeschlossene Geräte, WLAN-ADB, Geräteinformationen (Hersteller, Modell, IPv4-Adresse, Android-Version, Sicherheitspatch, Chipsatz, RAM, Speicher, Akku, Display, Laufzeit, USB-Ethernet-Adapter am Headset), Seriennummern und Benutzerordner für Screenshots ausblenden |
 | **2 · APK Backup** | Nachinstallierte Apps einlesen (Name, Version, Icon direkt aus der APK), APK / OBB / Android/data sichern – inkl. Split-APKs, SHA-256-Prüfsummen, `manifest.json`, `backup-report.json`, `INSTALL.txt`; einzelne Apps per Papierkorb-Symbol **deinstallieren** |
 | **3 · APK Install** | APK per Drag & Drop installieren (Split-APKs werden erkannt), App-Ordner aus einem Backup inkl. OBB, **Batch-Restore** ganzer Backup-Ordner (APK, OBB und Daten, Auswahl pro App), OBB-Ordner nach `/sdcard/Android/obb/<Paket>` kopieren, Gerät (MTP) im Explorer öffnen |
-| **4 · Speedtest** | Durchsatztest über ADB (USB oder WLAN) oder **TCP/IP direkt** (USB-NCM oder WLAN, beide Richtungen, parallele Verbindungen); Verlaufsgraph mit Einbrüchen/Aussetzern und WLAN-Daten des Headsets, Bericht als PNG + CSV |
-| **5 · Stream (Beta)** | **Headset-Casting** für Meta Quest und Play For Dream: entzerrtes Bild mit Ton und Mikrofon über USB, MKV-Aufnahme, Screenshot. Für alle anderen Android-Geräte **scrcpy** (rohes Display, Ausschnitt/Drehung, Ton, MP4-Aufnahme) |
+| **4 · Speedtest** | Durchsatztest über ADB (USB oder WLAN) oder **TCP/IP direkt** (USB-NCM, USB-Ethernet-Adapter am Headset oder WLAN, beide Richtungen, parallele Verbindungen); Verlaufsgraph mit Einbrüchen/Aussetzern und WLAN-Daten des Headsets, Bericht als PNG + CSV |
+| **5 · Stream (Beta)** | **Headset-Casting** für Meta Quest, Play For Dream und PICO: entzerrtes Bild mit Ton und Mikrofon über USB, MKV-Aufnahme, Screenshot. Für alle anderen Android-Geräte **scrcpy** (rohes Display, Ausschnitt/Drehung, Ton, MP4-Aufnahme) |
 | **6 · Performance** | Leistungswerte live per ADB (FPS, Frame-Zeiten, CPU-/GPU-Last, Takt, Temperaturen, Akku, RAM …) für Play For Dream und Meta Quest, Auswahl der Werte und Graphen, CSV-Protokoll, HUD-App im Headset ein-/ausschalten bzw. installieren |
 | **7 · ADB Commands** | ADB-Befehle mit Live-Ausgabe, Stopp, Verlauf (↑/↓); **Befehle für das erkannte Gerät** (Meta Quest, Pico, Android), **Entdecken** (Apps, Systemwerte, Einstellungen, Dienste live vom Gerät) und eigene gespeicherte Befehle, optional pro Gerätemodell |
 | **8 · Build Info** | Version, Build-Datum, Variante (installiert/portabel), .NET, ADB, Repo, Datenordner, Lizenz; **Update-Prüfung** und Auto-Update |
@@ -119,7 +119,9 @@ lassen sich überspringen.
    das Kabel ab; das WLAN-Gerät wird aktives Gerät.
 
 Gilt bis zum nächsten Neustart des Headsets. PC und Headset müssen im selben
-Netz sein (kein Gäste-WLAN / keine Client-Isolation).
+Netz sein (kein Gäste-WLAN / keine Client-Isolation). Ändert sich die IP des Headsets
+(z. B. Wechsel von WLAN auf einen USB-Ethernet-Adapter), findet ADBora es anhand der
+Seriennummer im lokalen Netz wieder und wechselt automatisch auf die neue Adresse.
 
 ### Speedtest – Messprinzip
 
@@ -134,13 +136,15 @@ ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
 4 oder 8 parallelen Verbindungen (vergleichbar mit Online-Speedtests):
 
 ```text
-PC ↔ Netzwerkadapter (USB-NCM oder WLAN) ↔ toybox nc (Gerät)
+PC ↔ Netzwerkadapter (USB-NCM, USB-Ethernet oder WLAN) ↔ toybox nc (Gerät)
 ```
 
 - **USB-NCM** (USB-Netzwerk über das Kabel): Bei der Quest schaltet ADBora es bei Bedarf
   über die Begleit-App selbst ein (wie Virtual Desktop; beim allerersten Mal fragt die
   Quest um Erlaubnis), bei der Play For Dream in den experimentellen Einstellungen
   aktivieren. Verbunden wird über IPv6 Link-Local, ohne DHCP und ohne Firewall-Regel.
+- **USB-Ethernet-Adapter am Headset** (eth0) wird als eigenes Ziel erkannt; Adapter mit
+  Ladeanschluss zuerst ohne Ladegerät einstecken, sonst wechselt das Headset in den Lademodus.
 - **Verlaufsgraph:** Rate alle 0,25 s, Einbrüche (unter 50 % des Medians) gelb,
   Aussetzer rot; bei WLAN-Tests zusätzlich RSSI, Paketwiederholungen und Linkrate des
   Headsets. **Bericht speichern** legt PNG + CSV unter `Dokumente\ADBora\Speedtest` ab.
@@ -150,7 +154,7 @@ PC ↔ Netzwerkadapter (USB-NCM oder WLAN) ↔ toybox nc (Gerät)
 
 Zwei Modi, oben im Tab umschaltbar; ADBora wählt passend zum Gerät automatisch.
 
-**Headset-Casting (Meta Quest, Play For Dream)** – entzerrtes Bild wie beim offiziellen
+**Headset-Casting (Meta Quest, Play For Dream, PICO)** – entzerrtes Bild wie beim offiziellen
 Casting, direkt über das USB-Kabel (oder WLAN-ADB) in einem ADBora-Fenster, ohne Browser,
 Handy-App oder Meta-Konto:
 
@@ -160,9 +164,13 @@ Handy-App oder Meta-Konto:
 - **Play For Dream:** ADBora startet den eingebauten Casting-Dienst der PFD und liest dessen
   Stream per `adb forward`; Einzelauge 1280 × 720, Ton als AAC. Miracast vorher beenden.
   Geschützte Inhalte (DRM, Browser) zeigt die PFD auch hier nicht.
+- **PICO** (z. B. Pico 4 Ultra): Die Begleit-App **ADBora Mic** legt ein Aufnahme-Display an,
+  in das die PICO das entzerrte Einzelauge rendert (wie ihre eingebaute Bildschirmaufnahme);
+  1920 × 1080 bis 60 fps. Ton über den Audio-Teil von scrcpy (spielt im Headset weiter);
+  Apps, die eine Aufnahme sperren, bleiben stumm.
 - Ton des Headsets am PC (während des Streams ein-/ausschaltbar), Lautstärke pro Headset.
-- **Mikrofon:** Das Casting der Play For Dream schickt das Mikrofon nicht mit; damit es bei
-  beiden Headsets gleich funktioniert, installiert ADBora bei Bedarf die kleine Begleit-App **ADBora Mic** (`companion/mic`, Open Source,
+- **Mikrofon:** Das Casting der Hersteller schickt das Mikrofon nicht mit. Dafür installiert
+  ADBora bei Bedarf die kleine Begleit-App **ADBora Mic** (`companion/mic`, Open Source,
   ohne Netzwerkzugriff, kein Fenster); sie läuft nur während des Streams.
 - Aufnahme als **MKV** mit Ton und Mikrofon (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
 - Stream-Fenster: Doppelklick/F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot,
@@ -178,7 +186,7 @@ Handy-App oder Meta-Konto:
   schief eingebaut, bei der Play For Dream ein 2 × 2-Raster auf einem eigenen Display.
   ADBora wählt passendes Display, Ausschnitt und Drehung automatisch; mit **Grösse,
   Versatz und Neigung** lässt sich nachjustieren (wird pro Gerätemodell gemerkt).
-  Für Quest und Play For Dream liefert das Headset-Casting ein entzerrtes Bild.
+  Für Quest, Play For Dream und PICO liefert das Headset-Casting ein entzerrtes Bild.
 - Ton des Headsets oder Mikrofon, Steuerung per Maus/Tastatur (optional), Aufnahme als MP4
   (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
 - Während des Streams: Näherungssensor aus (Quest) bzw. Display-Timeout 1 Stunde (andere
@@ -284,11 +292,11 @@ backups are never deleted. The current data location is shown in
 
 | Tab | Content |
 |---|---|
-| **1 · General settings** | Language, ADB setup (choose adb.exe, auto search, Platform-Tools download, setup help), versions (ADBora, ADB, Platform-Tools, .NET, Windows), data storage, connected devices, Wi-Fi ADB, device information (manufacturer, model, IPv4 address, Android version, security patch, chipset, RAM, storage, battery, display, uptime) |
+| **1 · General settings** | Language, ADB setup (choose adb.exe, auto search, Platform-Tools download, setup help), versions (ADBora, ADB, Platform-Tools, .NET, Windows), data storage, connected devices, Wi-Fi ADB, device information (manufacturer, model, IPv4 address, Android version, security patch, chipset, RAM, storage, battery, display, uptime, USB Ethernet adapter on the headset), hide serial numbers and user folder for screenshots |
 | **2 · APK backup** | Scan user-installed apps (name, version, icon read from the APK), back up APK / OBB / Android/data – incl. split APKs, SHA-256 checksums, `manifest.json`, `backup-report.json`, `INSTALL.txt`; **uninstall** single apps via the trash icon |
 | **3 · APK install** | Install APKs via drag & drop (split APKs detected), app folders from a backup incl. OBB, **batch restore** of whole backup folders (APK, OBB and data, selectable per app), copy OBB folders to `/sdcard/Android/obb/<package>`, open the device (MTP) in Explorer |
-| **4 · Speed test** | Throughput test via ADB (USB or Wi-Fi) or **TCP/IP direct** (USB NCM or Wi-Fi, both directions, parallel connections); history chart with dips/stalls and the headset's Wi-Fi data, report as PNG + CSV |
-| **5 · Stream (beta)** | **Headset casting** for Meta Quest and Play For Dream: undistorted picture with audio and microphone over USB, MKV recording, screenshot. For all other Android devices **scrcpy** (raw display, view/rotation, audio, MP4 recording) |
+| **4 · Speed test** | Throughput test via ADB (USB or Wi-Fi) or **TCP/IP direct** (USB NCM, USB Ethernet adapter on the headset or Wi-Fi, both directions, parallel connections); history chart with dips/stalls and the headset's Wi-Fi data, report as PNG + CSV |
+| **5 · Stream (beta)** | **Headset casting** for Meta Quest, Play For Dream and PICO: undistorted picture with audio and microphone over USB, MKV recording, screenshot. For all other Android devices **scrcpy** (raw display, view/rotation, audio, MP4 recording) |
 | **6 · Performance** | Live performance values via ADB (FPS, frame times, CPU/GPU load, clocks, temperatures, battery, RAM …) for Play For Dream and Meta Quest, choice of values and graphs, CSV log, switch or install the HUD app on the headset |
 | **7 · ADB commands** | ADB commands with live output, stop, history (↑/↓); **commands for the detected device** (Meta Quest, Pico, Android), **Explore** (apps, system properties, settings, services live from the device) and your own saved commands, optionally per device model |
 | **8 · Build info** | Version, build date, variant (installed/portable), .NET, ADB, repo, data folder, license; **update check** and auto-update |
@@ -358,7 +366,9 @@ silently by its setup, the portable version directly in its program folder (the
    can be removed; the Wi-Fi device becomes the active device.
 
 Valid until the headset restarts. PC and headset must be on the same network
-(no guest Wi-Fi / client isolation).
+(no guest Wi-Fi / client isolation). If the headset's IP changes (e.g. switching from
+Wi-Fi to a USB Ethernet adapter), ADBora finds it again on the local network by its serial
+number and switches to the new address automatically.
 
 ### Speed test – how it works
 
@@ -373,13 +383,15 @@ path, not the theoretical bus speed.
 optionally with 4 or 8 parallel connections (comparable to online speed tests):
 
 ```text
-PC ↔ network adapter (USB NCM or Wi-Fi) ↔ toybox nc (device)
+PC ↔ network adapter (USB NCM, USB Ethernet or Wi-Fi) ↔ toybox nc (device)
 ```
 
 - **USB NCM** (USB networking over the cable): on the Quest ADBora switches it on by
   itself via the companion app when needed (like Virtual Desktop; the very first time
   the Quest asks for permission), on the Play For Dream enable it in the experimental
   settings. The connection uses IPv6 link-local, no DHCP and no firewall rule needed.
+- A **USB Ethernet adapter on the headset** (eth0) is detected as its own target; plug in
+  adapters with a charging port without the charger first, or the headset goes to charging mode.
 - **History chart:** rate every 0.25 s, dips (below 50 % of the median) yellow, stalls
   red; for Wi-Fi tests also RSSI, packet retries and link rate of the headset. **Save
   report** stores PNG + CSV in `Documents\ADBora\Speedtest`.
@@ -389,7 +401,7 @@ PC ↔ network adapter (USB NCM or Wi-Fi) ↔ toybox nc (device)
 
 Two modes, switchable at the top of the tab; ADBora picks the right one for the device.
 
-**Headset casting (Meta Quest, Play For Dream)** – undistorted picture like official casting,
+**Headset casting (Meta Quest, Play For Dream, PICO)** – undistorted picture like official casting,
 directly over the USB cable (or Wi-Fi ADB) in an ADBora window, no browser, phone app or
 Meta account:
 
@@ -399,9 +411,13 @@ Meta account:
 - **Play For Dream:** ADBora starts the PFD's built-in casting service and reads its stream via
   `adb forward`; single eye 1280 × 720, audio as AAC. Stop Miracast first. Protected content
   (DRM, browser) is not shown by the PFD here either.
+- **PICO** (e.g. Pico 4 Ultra): the companion app **ADBora Mic** creates a capture display into
+  which the PICO renders the undistorted single eye (like its built-in screen recorder);
+  1920 × 1080 up to 60 fps. Audio via the audio part of scrcpy (keeps playing in the headset);
+  apps that block capturing stay silent.
 - Headset audio on the PC (can be switched on/off while streaming), volume per headset.
-- **Microphone:** Play For Dream's casting does not send the microphone; so that it works the
-  same on both headsets, ADBora installs the small companion app **ADBora Mic** when needed (`companion/mic`, open source,
+- **Microphone:** the manufacturers' casting does not send the microphone. For this ADBora
+  installs the small companion app **ADBora Mic** when needed (`companion/mic`, open source,
   no network access, no window); it only runs while streaming.
 - **MKV** recording with audio and microphone (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - Stream window: double-click/F11 = full screen, Esc = leave full screen, F12 = screenshot,
@@ -416,7 +432,7 @@ Meta account:
 - The picture is the **raw display**: on the Quest both eyes side by side and mounted
   tilted, on the Play For Dream a 2 × 2 grid on a separate display. ADBora picks display,
   view and rotation automatically; **size, offset and tilt** fine-tune it (remembered per
-  device model). For Quest and Play For Dream, headset casting gives an undistorted picture.
+  device model). For Quest, Play For Dream and PICO, headset casting gives an undistorted picture.
 - Headset audio or microphone, optional mouse/keyboard control, MP4 recording
   (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - While streaming: proximity sensor off (Quest) or display timeout 1 hour (other devices);

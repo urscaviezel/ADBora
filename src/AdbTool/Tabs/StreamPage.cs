@@ -9,7 +9,7 @@ namespace AdbTool.Tabs;
 
 /// <summary>
 /// Tab "Stream": two modes. "Headset casting" shows the undistorted casting picture of
-/// a Meta Quest or Play For Dream in an ADBora window (see AdbTool.Cast). "scrcpy" mirrors
+/// a Meta Quest, Play For Dream or PICO in an ADBora window (see AdbTool.Cast). "scrcpy" mirrors
 /// the raw display of any Android device (separate scrcpy window) with view, crop,
 /// recording, screenshot and audio/microphone forwarding.
 /// </summary>
@@ -74,11 +74,12 @@ internal sealed class StreamPage : UserControl, IPage
     private readonly TextBox _log = Ui.Console();
 
     // --- mode / headset casting
-    private readonly RadioButton _modeCast = Ui.Radio("Headset-Casting (Meta Quest, Play For Dream)", "Headset casting (Meta Quest, Play For Dream)");
+    private readonly RadioButton _modeCast = Ui.Radio("Headset-Casting (Meta Quest, Play For Dream, PICO)", "Headset casting (Meta Quest, Play For Dream, PICO)");
     private readonly RadioButton _modeScrcpy = Ui.Radio("scrcpy (alle Android-Geräte)", "scrcpy (all Android devices)");
     private readonly Label _modeHint = Ui.Label("", "", muted: true);
     private readonly RadioButton _hmdQuest = Ui.Radio("Meta Quest", "Meta Quest");
     private readonly RadioButton _hmdPfd = Ui.Radio("Play For Dream MR", "Play For Dream MR");
+    private readonly RadioButton _hmdPico = Ui.Radio("PICO", "PICO");
     private readonly Label _castInfo = Ui.Label("", "", muted: true);
     private readonly CheckBox _castProximity = Ui.CheckBox("Headset während des Streams wach halten", "Keep the headset awake while streaming");
     private readonly CheckBox _castAudio = Ui.CheckBox("Ton des Headsets am PC abspielen", "Play the headset audio on the PC");
@@ -153,8 +154,8 @@ internal sealed class StreamPage : UserControl, IPage
         _download.Click += async (_, _) => await DownloadAsync();
         _choose.Click += (_, _) => ChooseScrcpy();
         var beta = _beta = Ui.Label(
-            "scrcpy zeigt das rohe Display des Geräts. Bei VR-Headsets ist das Bild je nach Gerät verzerrt, schief oder als Raster – Ausschnitt, Drehung und Feinabstimmung helfen. Für Meta Quest und Play For Dream gibt es oben das entzerrte „Headset-Casting“.",
-            "scrcpy shows the raw display of the device. On VR headsets the picture is distorted, tilted or a grid depending on the device – view, rotation and fine tuning help. For Meta Quest and Play For Dream use the undistorted \"Headset casting\" above.");
+            "scrcpy zeigt das rohe Display des Geräts. Bei VR-Headsets ist das Bild je nach Gerät verzerrt, schief oder als Raster – Ausschnitt, Drehung und Feinabstimmung helfen. Für Meta Quest, Play For Dream und PICO gibt es oben das entzerrte „Headset-Casting“.",
+            "scrcpy shows the raw display of the device. On VR headsets the picture is distorted, tilted or a grid depending on the device – view, rotation and fine tuning help. For Meta Quest, Play For Dream and PICO use the undistorted \"Headset casting\" above.");
         beta.ForeColor = Theme.Warning;
         beta.Margin = new Padding(0, 0, 0, 8);
         Ui.WrapTo(beta, this, 40);
@@ -189,10 +190,11 @@ internal sealed class StreamPage : UserControl, IPage
         _control.CheckedChanged += (_, _) => { _state.Settings.StreamControl = _control.Checked; _state.Settings.Save(); };
         _onTop.CheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _onTop.Checked; _state.Settings.Save(); };
         _record.CheckedChanged += (_, _) => { _state.Settings.StreamRecord = _record.Checked; _state.Settings.Save(); UpdateEnabled(); };
-        _folder.Text = _state.Settings.StreamFolder;
+        _folder.Text = Privacy.ShowPath(_state.Settings.StreamFolder);
         _folder.TextChanged += (_, _) => { _state.Settings.StreamFolder = _folder.Text.Trim(); _state.Settings.Save(); };
         _browse.Click += (_, _) => ChooseFolder(_folder, Loc.T("Zielordner für Videoaufnahmen", "Folder for video recordings"));
-        _shotFolder.Text = _state.Settings.ScreenshotFolder;
+        _shotFolder.Text = Privacy.ShowPath(_state.Settings.ScreenshotFolder);
+        Privacy.Changed += () => { _folder.Text = Privacy.ShowPath(_folder.Text.Trim()); _shotFolder.Text = Privacy.ShowPath(_shotFolder.Text.Trim()); };
         _shotFolder.TextChanged += (_, _) => { _state.Settings.ScreenshotFolder = _shotFolder.Text.Trim(); _state.Settings.Save(); };
         _shotBrowse.Click += (_, _) => ChooseFolder(_shotFolder, Loc.T("Zielordner für Screenshots", "Folder for screenshots"));
 
@@ -325,7 +327,7 @@ internal sealed class StreamPage : UserControl, IPage
         _download.Enabled = _choose.Enabled = !_downloading && !streaming;
         _listDisplays.Enabled = ready && !streaming;
         _displayCombo.Enabled = !streaming;
-        foreach (Control c in new Control[] { _modeCast, _modeScrcpy, _hmdQuest, _hmdPfd, _castProximity, _castOnTop, _castRecord })
+        foreach (Control c in new Control[] { _modeCast, _modeScrcpy, _hmdQuest, _hmdPfd, _hmdPico, _castProximity, _castOnTop, _castRecord })
             c.Enabled = !streaming;
         foreach (Control c in new Control[] { _view, _rotation, _zoom, _offX, _offY, _angle, _resetFine, _displayCombo, _quality, _fps, _audio, _control, _onTop, _proximity, _record, _folder, _browse, _shotFolder, _shotBrowse })
             c.Enabled = !streaming;
@@ -342,8 +344,8 @@ internal sealed class StreamPage : UserControl, IPage
                     : _scrcpy is null
                         ? Loc.T("scrcpy fehlt – oben „scrcpy herunterladen“ klicken.", "scrcpy is missing – click \"Download scrcpy\" above.")
                         : _modeCast.Checked && SelectedCastKind == CastKind.None
-                            ? Loc.T("Headset auswählen (Meta Quest oder Play For Dream) oder zu „scrcpy“ wechseln.", "Choose the headset (Meta Quest or Play For Dream) or switch to \"scrcpy\".")
-                            : Loc.T($"Bereit: {d.DisplayName} ({d.Serial})", $"Ready: {d.DisplayName} ({d.Serial})");
+                            ? Loc.T("Headset auswählen (Meta Quest, Play For Dream oder PICO) oder zu „scrcpy“ wechseln.", "Choose the headset (Meta Quest, Play For Dream or PICO) or switch to \"scrcpy\".")
+                            : Loc.T($"Bereit: {d.DisplayName} ({d.ShownSerial})", $"Ready: {d.DisplayName} ({d.ShownSerial})");
         }
     }
 
@@ -428,7 +430,7 @@ internal sealed class StreamPage : UserControl, IPage
         using var dialog = new FolderBrowserDialog { Description = title, UseDescriptionForTitle = true };
         string current = Environment.ExpandEnvironmentVariables(box.Text.Trim());
         if (Directory.Exists(current)) dialog.SelectedPath = current;
-        if (dialog.ShowDialog(FindForm()) == DialogResult.OK) box.Text = dialog.SelectedPath;
+        if (dialog.ShowDialog(FindForm()) == DialogResult.OK) box.Text = Privacy.ShowPath(dialog.SelectedPath);
     }
 
     // ------------------------------------------------------------------
@@ -783,7 +785,7 @@ internal sealed class StreamPage : UserControl, IPage
     {
         _castCard = new Card("Headset-Casting", "Headset casting") { Dock = DockStyle.Top };
         var grid = Ui.Grid(2);
-        var hmds = Ui.Row(_hmdQuest, _hmdPfd);
+        var hmds = Ui.Row(_hmdQuest, _hmdPfd, _hmdPico);
         hmds.WrapContents = true;
         Ui.AddRow(grid, Ui.Label("Headset", "Headset", muted: true), hmds);
         _castInfo.Margin = new Padding(0, 2, 0, 8);
@@ -821,8 +823,8 @@ internal sealed class StreamPage : UserControl, IPage
             _state.Settings.Save();
             if (_cast is not null) await ApplyMicAsync(_cast);
         };
-        var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; so funktioniert das Mikrofon bei beiden Headsets gleich (das Casting der Play For Dream schickt es nicht mit).",
-                               "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; this way the microphone works the same on both headsets (Play For Dream's casting does not send it).", muted: true);
+        var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; das Casting der Hersteller schickt das Mikrofon nicht mit.",
+                               "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.", muted: true);
         Ui.WrapTo(micHint, this, 200);
         Ui.AddRow(grid, new Label { Width = 1 }, _castMic);
         Ui.AddRow(grid, new Label { Width = 1 }, micHint);
@@ -836,6 +838,7 @@ internal sealed class StreamPage : UserControl, IPage
         _castCard.SetContent(grid);
         _hmdQuest.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
         _hmdPfd.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+        _hmdPico.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
     }
 
     /// <summary>Volume of the selected headset (saved separately for Quest and PFD).</summary>
@@ -847,7 +850,7 @@ internal sealed class StreamPage : UserControl, IPage
         _volumeLoading = false;
     }
 
-    private CastKind SelectedCastKind => _hmdQuest.Checked ? CastKind.Quest : _hmdPfd.Checked ? CastKind.PlayForDream : CastKind.None;
+    private CastKind SelectedCastKind => _hmdQuest.Checked ? CastKind.Quest : _hmdPfd.Checked ? CastKind.PlayForDream : _hmdPico.Checked ? CastKind.Pico : CastKind.None;
 
     private void ApplyMode()
     {
@@ -874,8 +877,11 @@ internal sealed class StreamPage : UserControl, IPage
                                     "Meta Quest: uses the Quest's casting service (like the Meta Quest Developer Hub), about 2064 × 1440 at 30 fps. Stop any casting to phone, browser or SideQuest first.") + auto,
             CastKind.PlayForDream => Loc.T("Play For Dream: nutzt den eingebauten Casting-Dienst der PFD (Einzelauge, 1280 × 720 bei ca. 24 fps). Miracast zum TV vorher beenden.",
                                            "Play For Dream: uses the built-in PFD casting service (single eye, 1280 × 720 at about 24 fps). Stop Miracast to a TV first.") + auto,
+            CastKind.Pico => Loc.T("PICO: nutzt die Aufnahme-Schnittstelle der PICO über die Begleit-App „ADBora Mic“ (Einzelauge, 1920 × 1080 bei bis zu 60 fps), Ton über scrcpy (spielt im Headset weiter). Apps, die eine Aufnahme sperren, bleiben stumm.",
+                                   "PICO: uses the PICO capture interface through the companion app \"ADBora Mic\" (single eye, 1920 × 1080 at up to 60 fps), audio via scrcpy (keeps playing in the headset). Apps that block capturing stay silent.") + auto,
             _ => Loc.T("Für andere Geräte „scrcpy“ verwenden.", "Use \"scrcpy\" for other devices.")
         };
+
         UpdateEnabled();
     }
 
@@ -891,6 +897,7 @@ internal sealed class StreamPage : UserControl, IPage
         _detected = kind;
         if (kind == CastKind.Quest) _hmdQuest.Checked = true;
         else if (kind == CastKind.PlayForDream) _hmdPfd.Checked = true;
+        else if (kind == CastKind.Pico) _hmdPico.Checked = true;
         if (kind != CastKind.None) _modeCast.Checked = true; else _modeScrcpy.Checked = true;
         ApplyMode();
     }
@@ -930,7 +937,7 @@ internal sealed class StreamPage : UserControl, IPage
         session.Ended += reason => BeginInvoke(new Action(() => OnCastEnded(session, reason)));
         _cast = session;
         Log("");
-        Log(Loc.T($"Headset-Casting: {device.DisplayName} ({device.Serial})", $"Headset casting: {device.DisplayName} ({device.Serial})"));
+        Log(Loc.T($"Headset-Casting: {device.DisplayName} ({device.ShownSerial})", $"Headset casting: {device.DisplayName} ({device.ShownSerial})"));
         try
         {
             await session.StartAsync($"ADBora Stream – {device.DisplayName}", _castOnTop.Checked, record, FindForm(), _castAudio.Checked);

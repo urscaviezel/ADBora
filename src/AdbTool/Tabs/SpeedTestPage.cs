@@ -37,7 +37,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
     private readonly RadioButton _max = Ui.Radio("Maximale stabile Transferrate ermitteln", "Determine maximum stable transfer rate");
     private readonly TextBox _rate = Ui.TextBox(110);
     private readonly RadioButton _pathAdb = Ui.Radio("ADB (adb reverse, über USB oder WLAN-ADB)", "ADB (adb reverse, via USB or Wi-Fi ADB)");
-    private readonly RadioButton _pathDirect = Ui.Radio("TCP/IP direkt (USB-NCM oder WLAN)", "TCP/IP direct (USB NCM or Wi-Fi)");
+    private readonly RadioButton _pathDirect = Ui.Radio("TCP/IP direkt (USB-NCM, Ethernet oder WLAN)", "TCP/IP direct (USB NCM, Ethernet or Wi-Fi)");
     private readonly DarkComboBox _directTarget = Ui.Combo(330);
     private readonly DarkButton _detect = Ui.Button("Erkennen", "Detect");
     private readonly List<DirectTarget> _targets = new();
@@ -217,9 +217,9 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
         var how = Ui.Label(
             "Messpfad ADB: PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Der Wert ist der Durchsatz dieses ADB/TCP-Pfads, nicht die theoretische USB-Busgeschwindigkeit. " +
-            "TCP/IP direkt: PC ↔ Netzwerkadapter ↔ toybox nc auf dem Headset, ohne ADB – über USB-NCM (USB-Netzwerk; bei der Quest schaltet ADBora es bei Bedarf über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren) oder WLAN; gemessen wird in beide Richtungen. Es wird nichts auf dem Gerät gespeichert.",
+            "TCP/IP direkt: PC ↔ Netzwerkadapter ↔ toybox nc auf dem Headset, ohne ADB – über USB-NCM (USB-Netzwerk; bei der Quest schaltet ADBora es bei Bedarf über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren), einen USB-Ethernet-Adapter am Headset oder WLAN; gemessen wird in beide Richtungen. Es wird nichts auf dem Gerät gespeichert.",
             "ADB path: PC TCP sender → adb reverse → USB/WLAN → toybox nc → /dev/null. The value is the throughput of this ADB/TCP path, not the theoretical USB bus speed. " +
-            "TCP/IP direct: PC ↔ network adapter ↔ toybox nc on the headset, without ADB – over USB NCM (USB networking; on the Quest ADBora switches it on via the companion app when needed, on the Play For Dream enable it in the experimental settings) or Wi-Fi; both directions are measured. Nothing is written to the device.", muted: true);
+            "TCP/IP direct: PC ↔ network adapter ↔ toybox nc on the headset, without ADB – over USB NCM (USB networking; on the Quest ADBora switches it on via the companion app when needed, on the Play For Dream enable it in the experimental settings), a USB Ethernet adapter on the headset or Wi-Fi; both directions are measured. Nothing is written to the device.", muted: true);
         Ui.WrapTo(how, settings);
         how.Margin = new Padding(0, 10, 0, 0);
         Ui.AddRow(grid, how);
@@ -544,7 +544,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             UpdateEnabled();
 
             string mode = direct ? $"{Loc.T("TCP direkt", "TCP direct")} · {SelectedTarget?.Name}" : max ? "Max" : $"{Loc.T("Limit", "Limit")} {rate:0} Mbit/s";
-            Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}  {_hmdModel} ({_state.SelectedDevice?.Serial})  ·  {mode}  ·  {duration:0} s  →  {result}");
+            Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}  {_hmdModel} ({_state.SelectedDevice?.ShownSerial})  ·  {mode}  ·  {duration:0} s  →  {result}");
             _ = _state.RefreshDevicesAsync();
         }
     }
@@ -889,6 +889,9 @@ internal sealed class SpeedTestPage : UserControl, IPage
                     found.Add(new DirectTarget($"USB-NCM ({usbIf}) · IPv6 · {nic.Name}", addr));
                 }
             }
+            // USB-Ethernet adapter on the headset (e.g. RTL8156): reachable over the LAN like Wi-Fi
+            foreach (var e in v4.Where(x => Regex.IsMatch(x.If, @"^eth\d+$")))
+                found.Add(new DirectTarget($"Ethernet ({e.If}) · {e.Ip}", e.Ip));
             foreach (var w in v4.Where(x => x.If.StartsWith("wlan", StringComparison.Ordinal)))
                 found.Add(new DirectTarget($"{Loc.T("WLAN", "Wi-Fi")} ({w.If}) · {w.Ip}", w.Ip, Wifi: true));
         }
@@ -909,10 +912,15 @@ internal sealed class SpeedTestPage : UserControl, IPage
         else
         {
             int usb = _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal));
-            SetStatus(usb >= 0 ? "USB-NCM gefunden." : "Nur WLAN gefunden – USB-NCM ist nicht aktiv (Play For Dream: in den experimentellen Einstellungen einschalten).",
-                      usb >= 0 ? "USB NCM found." : "Only Wi-Fi found – USB NCM is not active (Play For Dream: switch it on in the experimental settings).");
+            bool eth = _targets.Any(t => t.Name.StartsWith("Ethernet", StringComparison.Ordinal));
+            if (usb >= 0) SetStatus("USB-NCM gefunden.", "USB NCM found.");
+            else if (eth) SetStatus("USB-Ethernet-Adapter am Headset gefunden.", "USB Ethernet adapter on the headset found.");
+            else SetStatus("Nur WLAN gefunden – USB-NCM ist nicht aktiv (Play For Dream: in den experimentellen Einstellungen einschalten).",
+                           "Only Wi-Fi found – USB NCM is not active (Play For Dream: switch it on in the experimental settings).");
         }
-        _directTarget.SelectedIndex = Math.Max(0, _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal)));
+        int preferred = _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal));
+        if (preferred < 0) preferred = _targets.FindIndex(t => t.Name.StartsWith("Ethernet", StringComparison.Ordinal));
+        _directTarget.SelectedIndex = Math.Max(0, preferred);
         _targetsSerial = _targets.Count > 0 ? device.Serial : null;
         _detecting = false;
         UpdateEnabled();
@@ -928,6 +936,12 @@ internal sealed class SpeedTestPage : UserControl, IPage
         async Task<bool> HasUsbAddress() =>
             (await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell", "ip -o -4 addr show usb0")).Output.Contains("inet ");
         if (await HasUsbAddress()) return;
+        // A USB Ethernet adapter on the Quest (eth0) is handled by the same "EthernetOverUsb"
+        // service: a TRANSPORT_USB request takes it over and restarts eth0 – which drops ADB
+        // over that adapter. The headset's USB port is busy with the adapter anyway.
+        if ((await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell", "ip -o -4 addr")).Output
+            .Split('\n').Any(l => Regex.IsMatch(l, @"^\d+:\s+eth\d+\s+inet\s")))
+            return;
         SetStatus("Schalte USB-Netzwerk (NCM) auf der Quest ein...", "Switching on USB networking (NCM) on the Quest...");
         try
         {

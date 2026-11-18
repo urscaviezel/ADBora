@@ -1,4 +1,4 @@
-using AdbTool.Core;
+﻿using AdbTool.Core;
 using AdbTool.Tabs;
 
 namespace AdbTool.UI;
@@ -24,6 +24,7 @@ internal sealed class MainForm : Form
     private readonly List<Control> _pages = new();
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 4000 };
     private readonly bool _smokeTest;
+    private NetworkRelocator? _relocator;
     private bool _updatingCombo;
     private bool _closeRequested;
     private bool _closingDone;
@@ -59,10 +60,15 @@ internal sealed class MainForm : Form
         ResumeLayout(false);
 
         _state.DevicesChanged += UpdateDeviceCombo;
+        Privacy.Changed += UpdateDeviceCombo;
         _state.SelectedDeviceChanged += UpdateDeviceCombo;
         _state.BusyChanged += OnBusyChanged;
         _state.AdbChanged += async () => { await _state.RefreshVersionAsync(); await _state.RefreshDevicesAsync(); UpdateDeviceCombo(); };
         Loc.LanguageChanged += () => { UpdateDeviceCombo(); OnBusyChanged(); };
+
+        // Network devices whose IP changed (e.g. Wi-Fi → USB Ethernet adapter) are found again.
+        _relocator = new NetworkRelocator(_state);
+        _relocator.Status += text => { if (!_state.IsBusy) _busyLabel.Text = text ?? ""; };
 
         _poll.Tick += async (_, _) =>
         {
@@ -360,7 +366,7 @@ internal sealed class MainForm : Form
 
     private sealed record DeviceItem(AdbDevice Device)
     {
-        public override string ToString() => $"{Device.DisplayName} · {Device.Serial} · {Device.StateText}";
+        public override string ToString() => $"{Device.DisplayName} · {Device.ShownSerial} · {Device.StateText}";
     }
 
     private void UpdateDeviceCombo()

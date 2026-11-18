@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using AdbTool.Backup;
@@ -194,7 +194,7 @@ internal sealed class InstallPage : UserControl, IPage
                     ? Loc.T("Kein bereites Gerät ausgewählt.", "No ready device selected.")
                     : !idle
                         ? Loc.T("Ein anderer ADB-Vorgang läuft gerade.", "Another ADB operation is running.")
-                        : Loc.T($"Ziel: {d.DisplayName} ({d.Serial})", $"Target: {d.DisplayName} ({d.Serial})"));
+                        : Loc.T($"Ziel: {d.DisplayName} ({d.ShownSerial})", $"Target: {d.DisplayName} ({d.ShownSerial})"));
         }
     }
 
@@ -477,8 +477,9 @@ internal sealed class InstallPage : UserControl, IPage
             Description = Loc.T("Backup-Ordner auswählen (Backup_… oder der Ordner mit mehreren Backups)", "Choose backup folder (Backup_… or the folder containing several backups)"),
             UseDescriptionForTitle = true
         };
-        if (Directory.Exists(_state.Settings.BackupDestination))
-            dialog.InitialDirectory = _state.Settings.BackupDestination;
+        string backups = Environment.ExpandEnvironmentVariables(_state.Settings.BackupDestination);
+        if (Directory.Exists(backups))
+            dialog.InitialDirectory = backups;
         if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
             OpenRestore(dialog.SelectedPath);
     }
@@ -507,7 +508,7 @@ internal sealed class InstallPage : UserControl, IPage
             return;
         }
 
-        List<RestoreEntry>? selected = RestoreDialog.Show(FindForm(), folder, entries, $"{device.DisplayName} ({device.Serial})");
+        List<RestoreEntry>? selected = RestoreDialog.Show(FindForm(), folder, entries, $"{device.DisplayName} ({device.ShownSerial})");
         if (selected is { Count: > 0 })
             _ = RestoreAsync(selected);
     }
@@ -533,8 +534,8 @@ internal sealed class InstallPage : UserControl, IPage
         var total = Stopwatch.StartNew();
 
         Log("");
-        Log(Loc.T($"══ Batch-Restore: {items.Count} App(s) → {device.DisplayName} ({device.Serial})",
-                  $"══ Batch restore: {items.Count} app(s) → {device.DisplayName} ({device.Serial})"));
+        Log(Loc.T($"══ Batch-Restore: {items.Count} App(s) → {device.DisplayName} ({device.ShownSerial})",
+                  $"══ Batch restore: {items.Count} app(s) → {device.DisplayName} ({device.ShownSerial})"));
 
         try
         {

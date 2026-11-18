@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Globalization;
@@ -187,7 +187,7 @@ internal sealed class PerformancePage : UserControl, IPage
             _status.Text = !_state.HasAdb
                 ? Loc.T("ADB ist nicht eingerichtet (Tab „Allgemeine Einstellungen“).", "ADB is not set up (\"General settings\" tab).")
                 : _state.SelectedDevice is { IsReady: true } d
-                    ? Loc.T($"Bereit: {d.DisplayName} ({d.Serial})", $"Ready: {d.DisplayName} ({d.Serial})")
+                    ? Loc.T($"Bereit: {d.DisplayName} ({d.ShownSerial})", $"Ready: {d.DisplayName} ({d.ShownSerial})")
                     : Loc.T("Kein bereites Gerät ausgewählt.", "No ready device selected.");
     }
 
@@ -222,7 +222,7 @@ internal sealed class PerformancePage : UserControl, IPage
         _sampler = StartAdb(adb, new[] { "shell", PerfMetrics.SamplerScript }, OnSystemLine);
         if (_csv.Checked) OpenCsv();
         _tick.Start();
-        _status.Text = Loc.T($"Messung läuft: {device.DisplayName} ({device.Serial})", $"Monitoring: {device.DisplayName} ({device.Serial})");
+        _status.Text = Loc.T($"Messung läuft: {device.DisplayName} ({device.ShownSerial})", $"Monitoring: {device.DisplayName} ({device.ShownSerial})");
         UpdateEnabled();
     }
 
@@ -439,7 +439,7 @@ internal sealed class PerformancePage : UserControl, IPage
         try { _csvWriter?.Dispose(); } catch { }
         _csvWriter = null;
         if (_csvFile is not null && !IsDisposed)
-            _sources.Text = Loc.T($"CSV gespeichert: {_csvFile}", $"CSV saved: {_csvFile}");
+            _sources.Text = Loc.T($"CSV gespeichert: {Privacy.MaskPaths(_csvFile)}", $"CSV saved: {Privacy.MaskPaths(_csvFile)}");
         _csvFile = null;
     }
 

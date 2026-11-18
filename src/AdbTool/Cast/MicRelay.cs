@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -14,7 +14,7 @@ namespace AdbTool.Cast;
 internal sealed class MicRelay : IDisposable
 {
     public const string Package = "com.adbora.mic";
-    private const int VersionCode = 4; // keep in sync with build/BUILD-COMPANION.ps1
+    private const int VersionCode = 6; // keep in sync with build/BUILD-COMPANION.ps1
     private readonly AdbClient _adb;
     private readonly CancellationTokenSource _cts = new();
     private TcpClient? _client;
@@ -26,16 +26,22 @@ internal sealed class MicRelay : IDisposable
 
     public MicRelay(string adbPath, string serial) => _adb = new AdbClient(adbPath, serial);
 
+    /// <summary>The companion app already runs (PICO casting serves the microphone too): only connect.</summary>
+    public bool AttachOnly { get; init; }
+
     private Task<AdbResult> Adb(int seconds, params string[] args) => _adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(seconds), args);
 
     public async Task StartAsync(int rate = 48000)
     {
-        await EnsureInstalledAsync();
-        await Adb(10, "shell", $"pm grant {Package} android.permission.RECORD_AUDIO");
-        await Adb(10, "shell", $"am force-stop {Package}");
-        AdbResult r = await Adb(15, "shell", $"am instrument -e rate {rate} {Package}/.MicInstrumentation");
-        if (r.Combined.Contains("Error", StringComparison.OrdinalIgnoreCase) && !r.Combined.Contains("log_ctrl"))
-            throw new InvalidOperationException("am instrument: " + r.Combined);
+        if (!AttachOnly)
+        {
+            await EnsureInstalledAsync();
+            await Adb(10, "shell", $"pm grant {Package} android.permission.RECORD_AUDIO");
+            await Adb(10, "shell", $"am force-stop {Package}");
+            AdbResult r = await Adb(15, "shell", $"am instrument -e rate {rate} {Package}/.MicInstrumentation");
+            if (r.Combined.Contains("Error", StringComparison.OrdinalIgnoreCase) && !r.Combined.Contains("log_ctrl"))
+                throw new InvalidOperationException("am instrument: " + r.Combined);
+        }
         AdbResult fwd = await Adb(10, "forward", "tcp:0", "localabstract:adbora_mic");
         if (!fwd.Ok || !int.TryParse(fwd.Output.Trim(), out _port))
             throw new InvalidOperationException("adb forward: " + fwd.Combined);
@@ -124,7 +130,7 @@ internal sealed class MicRelay : IDisposable
         try
         {
             if (_port > 0) await Adb(10, "forward", "--remove", $"tcp:{_port}");
-            await Adb(10, "shell", $"am force-stop {Package}");
+            if (!AttachOnly) await Adb(10, "shell", $"am force-stop {Package}");
         }
         catch { }
     }

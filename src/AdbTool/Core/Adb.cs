@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -13,7 +13,10 @@ internal sealed record AdbDevice(string Serial, string State, string Model, stri
 {
     public bool IsReady => State == "device";
 
-    public string DisplayName => string.IsNullOrWhiteSpace(Model) ? Serial : Model;
+    public string DisplayName => string.IsNullOrWhiteSpace(Model) ? ShownSerial : Model;
+
+    /// <summary>Serial for display (shortened when "hide serial number" is on).</summary>
+    public string ShownSerial => Privacy.Mask(Serial);
 
     public string StateText => State switch
     {

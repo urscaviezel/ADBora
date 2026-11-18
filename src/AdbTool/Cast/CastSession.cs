@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using AdbTool.Core;
 
 namespace AdbTool.Cast;
@@ -28,6 +28,7 @@ internal sealed class CastSession
     public CastSession(CastKind kind, string adbPath, string serial, string ffmpegFolder)
     {
         _source = CastSource.Create(kind, adbPath, serial);
+        if (_source is PicoCastSource pico) pico.ScrcpyFolder = ffmpegFolder; // game audio via scrcpy-server
         _adbPath = adbPath;
         _serial = serial;
         _ffmpegFolder = ffmpegFolder;
@@ -176,7 +177,7 @@ internal sealed class CastSession
             lock (_micGate) _micQueue.Clear();
             return;
         }
-        var mic = new MicRelay(_adbPath, _serial);
+        var mic = new MicRelay(_adbPath, _serial) { AttachOnly = _source is PicoCastSource };
         mic.Log += s => Log?.Invoke(s);
         mic.Samples += (samples, n, rate) =>
         {

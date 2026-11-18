@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.6.0 – 2026-11-18
+
+- DE: Stream: **Headset-Casting für PICO** (z. B. Pico 4 Ultra) – entzerrtes Einzelauge 1920 × 1080 über die Begleit-App
+  ADBora Mic (Aufnahme-Display der PICO), Ton über scrcpy (spielt im Headset weiter), Mikrofon, MKV-Aufnahme.
+- DE: Speedtest TCP/IP direkt: **USB-Ethernet-Adapter am Headset** als Ziel; Quest mit Ethernet-Adapter bricht nicht mehr ab.
+- DE: Geräteinformationen: **USB-Ethernet-Adapter** (Name, Chipsatz, USB-ID, IP, Treiber, Linkrate soweit lesbar) und Hinweis
+  auf den Lademodus der USB-C-Buchse.
+- DE: Neu: **Seriennummern und Benutzerordner ausblenden** (Allgemeine Einstellungen) – gekürzte Seriennummern und
+  `%USERPROFILE%` statt des persönlichen Pfads, für Screenshots.
+- DE: WLAN-ADB: Ändert sich die IP eines Headsets (z. B. WLAN → Ethernet-Adapter), findet ADBora es im lokalen Netz wieder.
+  Das Adressfeld folgt der Geräteauswahl (kein falsches Gerät mehr beim Verbinden eines zweiten Headsets).
+- DE: Mikrofon-Hinweis im Stream-Tab korrigiert (das Casting der Hersteller schickt das Mikrofon nicht mit).
+- EN: Stream: **headset casting for PICO** (e.g. Pico 4 Ultra) – undistorted single eye 1920 × 1080 via the companion app
+  ADBora Mic (PICO capture display), audio via scrcpy (keeps playing in the headset), microphone, MKV recording.
+- EN: Speed test TCP/IP direct: **USB Ethernet adapter on the headset** as a target; a Quest with an Ethernet adapter no longer aborts.
+- EN: Device info: **USB Ethernet adapter** (name, chip, USB ID, IP, driver, link speed where readable) and a hint on the
+  USB-C port's charging mode.
+- EN: New: **hide serial numbers and user folder** (General settings) – shortened serial numbers and `%USERPROFILE%`
+  instead of the personal path, for screenshots.
+- EN: Wi-Fi ADB: if a headset's IP changes (e.g. Wi-Fi → Ethernet adapter), ADBora finds it again on the local network.
+  The address field follows the device selection (no wrong device when connecting a second headset).
+- EN: Microphone hint in the Stream tab corrected (the manufacturers' casting does not send the microphone).
+
 ## v1.5.9 – 2026-11-16
 
 - DE: Speedtest-Bericht (PNG): Kopf mit Headset-Typ, Firmware, Messweg und Zusammenfassung wird jetzt angezeigt

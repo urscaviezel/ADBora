@@ -32,7 +32,7 @@ internal static class Program
         if (check >= 0 && check + 1 < args.Length)
             return CheckApk(args[check + 1]);
 
-        // Diagnostic mode: ADBora.exe --cast-test <adb.exe> <serial> <quest|pfd> <seconds> <out.png>
+        // Diagnostic mode: ADBora.exe --cast-test <adb.exe> <serial> <quest|pfd|pico> <seconds> <out.png>
         // Runs headset casting without a window and saves the last picture (+ <out>.log).
         // Diagnostic: ADBora.exe --ncm-test <adb.exe> <serial> <seconds> <log> – holds Quest USB networking
         int ncmTest = Array.IndexOf(args, "--ncm-test");
@@ -189,8 +189,9 @@ internal static class Program
             using var decoder = new Cast.H264Decoder();
             L("decoder created");
             decoder.FrameDecoded += b => { frames++; Bitmap? old = Interlocked.Exchange(ref last, b); old?.Dispose(); };
-            var source = Cast.CastSource.Create(kind == "pfd" ? Cast.CastKind.PlayForDream : Cast.CastKind.Quest, adb, serial);
+            var source = Cast.CastSource.Create(kind == "pfd" ? Cast.CastKind.PlayForDream : kind == "pico" ? Cast.CastKind.Pico : Cast.CastKind.Quest, adb, serial);
             source.Log += L;
+            if (source is Cast.PicoCastSource pico) pico.ScrcpyFolder = Path.GetDirectoryName(scrcpy);
             source.WantAudio = true;
             int aac = 0, pcm = 0;
             using var player = (Cast.AudioPlayer?)null;
@@ -200,12 +201,12 @@ internal static class Program
             source.AudioAac += (a, r, c) => { aac++; mkv.WriteAac(a); adec ??= new Cast.AacDecoder(); adec.Feed(a, c); };
             source.AudioPcm += (a, n, r, c) => { pcm++; mkv.WriteAudio(a, n, r, c); };
             source.Ended += r => L("ended: " + (r ?? "-"));
-            source.Video += (b, o, n) => { if (bytes == 0) L($"first video {n} bytes"); bytes += n; decoder.Feed(b.AsSpan(o, n), kind == "pfd"); if (frames == 1 && bytes == n) L("first frame decoded"); };
+            source.Video += (b, o, n) => { if (bytes == 0) L($"first video {n} bytes"); bytes += n; decoder.Feed(b.AsSpan(o, n), kind is "pfd" or "pico"); if (frames == 1 && bytes == n) L("first frame decoded"); };
             var sw = System.Diagnostics.Stopwatch.StartNew();
             source.StartAsync().GetAwaiter().GetResult();
             L($"started after {sw.ElapsedMilliseconds} ms");
             long micSamples = 0; double micPeak = 0;
-            var mic = new Cast.MicRelay(adb, serial);
+            var mic = new Cast.MicRelay(adb, serial) { AttachOnly = kind == "pico" };
             mic.Log += L;
             mic.Samples += (smp, n, r) => { micSamples += n; for (int i = 0; i < n; i++) micPeak = Math.Max(micPeak, Math.Abs((int)smp[i])); };
             try { mic.StartAsync().GetAwaiter().GetResult(); L("mic started"); } catch (Exception ex) { L("mic: " + ex.Message); }

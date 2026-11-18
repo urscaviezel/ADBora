@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using AdbTool.Core;
 using AdbTool.UI;
 
@@ -204,7 +204,7 @@ internal sealed class InfoPage : UserControl, IPage
         _variant.Text = Updater.KindText;
         _dotnet.Text = RuntimeInformation.FrameworkDescription;
         _os.Text = RuntimeInformation.OSDescription.Trim();
-        _adbPath.Text = _state.HasAdb ? _state.AdbPath! : Loc.T("Nicht eingerichtet (Tab „Allgemeine Einstellungen“)", "Not set up (\"General settings\" tab)");
+        _adbPath.Text = _state.HasAdb ? Privacy.MaskPaths(_state.AdbPath!) : Loc.T("Nicht eingerichtet (Tab „Allgemeine Einstellungen“)", "Not set up (\"General settings\" tab)");
         ShowAdbVersion();
         ShowUpdateStatus();
         if (refreshAdb && _state.HasAdb && string.IsNullOrEmpty(_state.AdbVersionText))

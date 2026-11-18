@@ -2,7 +2,7 @@
 # aapt2 (manifest) + javac + d8 + zipalign + apksigner.
 # Output: src\AdbTool\Resources\ADBoraMic.apk (embedded in ADBora).
 # Signing key: build\keys\companion.jks (not in the repository; created on first run).
-param([string]$Sdk = "C:\AI-Projects\SDKs\android-sdk", [int]$VersionCode = 4, [string]$VersionName = "1.3")
+param([string]$Sdk = "C:\AI-Projects\SDKs\android-sdk", [int]$VersionCode = 6, [string]$VersionName = "1.5")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $src = Join-Path $root "companion\mic"

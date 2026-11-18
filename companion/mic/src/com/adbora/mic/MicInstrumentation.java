@@ -34,7 +34,8 @@ public final class MicInstrumentation extends Instrumentation {
     private static final String SOCKET = "adbora_mic";
     private static final long CONNECT_TIMEOUT_MS = 30_000;
     private int rate = 48000;
-    private boolean ncm;
+    private boolean ncm, cast;
+    private int castWidth = 1920, castHeight = 1080, castBitrate = 12_000_000, castFps = 60;
     private volatile boolean connected;
 
     @Override
@@ -45,6 +46,13 @@ public final class MicInstrumentation extends Instrumentation {
                 rate = Integer.parseInt(arguments.getString("rate"));
         } catch (NumberFormatException ignored) { }
         ncm = arguments != null && "ncm".equals(arguments.getString("mode"));
+        cast = arguments != null && "cast".equals(arguments.getString("mode"));
+        if (cast) {
+            castWidth = intArg(arguments, "width", castWidth);
+            castHeight = intArg(arguments, "height", castHeight);
+            castBitrate = intArg(arguments, "bitrate", castBitrate);
+            castFps = intArg(arguments, "fps", castFps);
+        }
         start(); // → onStart() on a separate thread
         Thread watchdog = new Thread(() -> {
             try { Thread.sleep(CONNECT_TIMEOUT_MS); } catch (InterruptedException ignored) { }
@@ -115,6 +123,32 @@ public final class MicInstrumentation extends Instrumentation {
         exit();
     }
 
+    private static int intArg(Bundle b, String key, int def) {
+        try { return b.getString(key) != null ? Integer.parseInt(b.getString(key)) : def; }
+        catch (NumberFormatException e) { return def; }
+    }
+
+    /**
+     * Mode "cast": the microphone runs in the same process (a second instrumentation would end
+     * this one). ADBora may connect and disconnect any time; the process ends with the picture.
+     */
+    private void serveMicDuringCast() {
+        try (LocalServerSocket server = new LocalServerSocket(SOCKET)) {
+            while (true) {
+                try (LocalSocket client = server.accept()) {
+                    int uid = client.getPeerCredentials().getUid();
+                    if (uid != 2000 && uid != 0) continue;
+                    Log.i(TAG, "cast: microphone client connected");
+                    stream(client.getOutputStream());
+                } catch (IOException e) {
+                    Log.i(TAG, "cast: microphone client ended");
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "mic socket", e);
+        }
+    }
+
     /** Ends the instrumentation and the process. */
     private void exit() {
         try { finish(0, new Bundle()); } catch (RuntimeException ignored) { }
@@ -127,8 +161,13 @@ public final class MicInstrumentation extends Instrumentation {
             holdUsbNetwork();
             return;
         }
-        try (LocalServerSocket server = new LocalServerSocket(SOCKET)) {
-            Log.i(TAG, "listening, " + rate + " Hz");
+        if (cast) {
+            Thread mic = new Thread(this::serveMicDuringCast, "ADBoraMicCast");
+            mic.setDaemon(true);
+            mic.start();
+        }
+        try (LocalServerSocket server = new LocalServerSocket(cast ? "adbora_cast" : SOCKET)) {
+            Log.i(TAG, cast ? "cast: listening" : "listening, " + rate + " Hz");
             while (true) {
                 try (LocalSocket client = server.accept()) {
                     // Only adb (shell, uid 2000) or root may read the microphone
@@ -139,7 +178,8 @@ public final class MicInstrumentation extends Instrumentation {
                     }
                     connected = true;
                     watchDisconnect(client);
-                    stream(client.getOutputStream());
+                    if (cast) ScreenCast.stream(getContext(), client.getOutputStream(), castWidth, castHeight, castBitrate, castFps);
+                    else stream(client.getOutputStream());
                 } catch (IOException e) {
                     Log.i(TAG, "client ended: " + e.getMessage());
                 }

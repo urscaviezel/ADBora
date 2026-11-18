@@ -1,4 +1,4 @@
-namespace AdbTool.Core;
+﻿namespace AdbTool.Core;
 
 /// <summary>
 /// Shared application state: settings, ADB location, connected devices,
@@ -24,6 +24,7 @@ internal sealed class AppState
     public AppState(AppSettings settings)
     {
         Settings = settings;
+        Privacy.HideSerial = settings.HideSerial;
         AdbPath = AdbLocator.Discover(settings.AdbPath);
     }
 

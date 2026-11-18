@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -6,7 +6,7 @@ using AdbTool.Core;
 
 namespace AdbTool.Cast;
 
-internal enum CastKind { None, Quest, PlayForDream }
+internal enum CastKind { None, Quest, PlayForDream, Pico }
 
 /// <summary>
 /// Undistorted "casting" picture of a headset, delivered over ADB (USB or Wi-Fi ADB).
@@ -86,12 +86,15 @@ internal abstract class CastSource : IDisposable
             return CastKind.Quest;
         if (model.Contains("PFDM", StringComparison.OrdinalIgnoreCase) || model.Contains("YVR", StringComparison.OrdinalIgnoreCase))
             return CastKind.PlayForDream;
+        if (System.Text.RegularExpressions.Regex.IsMatch(model, @"\bA9210\b|\bA8[01]\d0\b|PICO|sparrow|phoenix", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            return CastKind.Pico;
         try
         {
             AdbResult r = await new AdbClient(adbPath, device.Serial).CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10),
-                "shell", "pm path com.oculus.metacam; pm path com.yvr.screencast");
+                "shell", "pm path com.oculus.metacam; pm path com.yvr.screencast; pm path com.pvr.picocast");
             if (r.Output.Contains("com.yvr.screencast", StringComparison.OrdinalIgnoreCase) || r.Output.Contains("YvrScreencast")) return CastKind.PlayForDream;
             if (r.Output.Contains("metacam", StringComparison.OrdinalIgnoreCase)) return CastKind.Quest;
+            if (r.Output.Contains("PicoCast", StringComparison.OrdinalIgnoreCase)) return CastKind.Pico;
         }
         catch { }
         return CastKind.None;
@@ -101,6 +104,7 @@ internal abstract class CastSource : IDisposable
     {
         CastKind.Quest => new QuestCastSource(adbPath, serial),
         CastKind.PlayForDream => new PfdCastSource(adbPath, serial),
+        CastKind.Pico => new PicoCastSource(adbPath, serial),
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 }

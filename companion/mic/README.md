@@ -1,11 +1,11 @@
 # ADBora Mic (companion app)
 
-Tiny Android app that ADBora installs on the headset (Meta Quest, Play For Dream, …) when
+Tiny Android app that ADBora installs on the headset (Meta Quest, Play For Dream, PICO, …) when
 needed. It has no activity, no service, no network permission and no UI; ADBora starts it
 as an instrumentation (`am instrument`) and it ends itself as soon as ADBora disconnects
 (or after 30 s without a connection), so it never keeps running in the background.
 
-Two modes:
+Three modes:
 
 * **Microphone** (default): captures the headset microphone (16-bit PCM, mono) and provides
   it on the abstract local socket `adbora_mic`; ADBora reads it with
@@ -16,6 +16,11 @@ Two modes:
   like Virtual Desktop does, so the Quest's "EthernetOverUsb" service switches on USB NCM;
   the request is held while ADBora is connected to the socket `adbora_ncm` (used by the
   speed test "TCP/IP direct").
+* **Casting** (`-e mode cast`, PICO): creates a private virtual display with the PRESENTATION
+  flag. PICO's system treats it as a capture display and has the XR runtime render the
+  undistorted single-eye view into it (like its own screen recorder). The display feeds an
+  H.264 encoder; the stream goes to ADBora over the socket `adbora_cast`. The microphone is
+  served from the same process on `adbora_mic`, since a second instrumentation would end this one.
 
 Only adb (shell, uid 2000) or root may connect to the sockets.
 

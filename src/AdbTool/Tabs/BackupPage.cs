@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using AdbTool.Backup;
 using AdbTool.Core;
 using AdbTool.UI;
@@ -143,7 +143,8 @@ internal sealed class BackupPage : UserControl, IPage
         AddRow(note);
 
         // Destination -----------------------------------------------------
-        _destination.Text = _state.Settings.BackupDestination;
+        _destination.Text = Privacy.ShowPath(_state.Settings.BackupDestination);
+        Privacy.Changed += () => _destination.Text = Privacy.ShowPath(_destination.Text.Trim());
         _destination.Leave += (_, _) => SaveDestination();
         _destination.TextChanged += (_, _) => _state.Settings.BackupDestination = _destination.Text.Trim();
         _browse.Click += (_, _) => ChooseDestination();
@@ -655,7 +656,7 @@ internal sealed class BackupPage : UserControl, IPage
             return;
         }
 
-        string destinationText = _destination.Text.Trim();
+        string destinationText = Environment.ExpandEnvironmentVariables(_destination.Text.Trim());
         if (destinationText.Length == 0)
         {
             MessageBox.Show(FindForm(), Loc.T("Bitte einen Backup-Ordner wählen.", "Please choose a backup folder."),
@@ -852,11 +853,12 @@ internal sealed class BackupPage : UserControl, IPage
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true
         };
-        if (Directory.Exists(_destination.Text))
-            dialog.SelectedPath = _destination.Text;
+        string current = Environment.ExpandEnvironmentVariables(_destination.Text.Trim());
+        if (Directory.Exists(current))
+            dialog.SelectedPath = current;
         if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
         {
-            _destination.Text = dialog.SelectedPath;
+            _destination.Text = Privacy.ShowPath(dialog.SelectedPath);
             SaveDestination();
         }
     }
