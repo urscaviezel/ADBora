@@ -130,7 +130,8 @@ internal sealed class PicoCastSource : CastSource
         _scid = Random.Shared.Next(1, int.MaxValue).ToString("x8");
         var psi = new ProcessStartInfo(AdbPath)
         {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            UseShellExecute = false, RedirectStandardInput = true, // keep stdin open (Linux: inherited /dev/null ends adb shell)
+            CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
         foreach (string a in new[] { "-s", Serial, "shell",
             $"CLASSPATH={jar} app_process / com.genymobile.scrcpy.Server {version} scid={_scid} log_level=warn video=false control=false " +

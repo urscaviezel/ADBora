@@ -211,7 +211,8 @@ internal sealed class PerformancePage : DockPanel, IPage
     {
         try
         {
-            var p = new Process { StartInfo = adb.CreateStartInfo(args), EnableRaisingEvents = true };
+            // stdin stays open (Linux: an inherited /dev/null would end "adb shell" early)
+            var p = new Process { StartInfo = adb.CreateStartInfo(args, redirectInput: true), EnableRaisingEvents = true };
             p.OutputDataReceived += (_, e) => { if (e.Data is { Length: > 0 } l) onLine(l); };
             p.ErrorDataReceived += (_, _) => { };
             p.Start();

@@ -423,6 +423,32 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         }
     }
 
+    /// <summary>Diagnostic (--ui-test speed): runs a test like the Start button and returns the log and the analysis.</summary>
+    internal async Task<string> AutoTestAsync(double seconds, bool direct)
+    {
+        _duration.Text = seconds.ToString(CultureInfo.InvariantCulture);
+        _pathDirect.IsChecked = direct;
+        _pathAdb.IsChecked = !direct;
+        _max.IsChecked = true;
+        if (direct)
+        {
+            // The page starts its own detection (path switch, device list update): wait until one has finished
+            var clock = Stopwatch.StartNew();
+            while (_targetsSerial is null && clock.Elapsed < TimeSpan.FromSeconds(60))
+            {
+                if (!_detecting) await DetectTargetsAsync();
+                await Task.Delay(300);
+            }
+            ComboBoxLog($"targets: {string.Join(" | ", _targets.Select(t => t.Name))} · selected: {SelectedTarget?.Name ?? "-"}");
+            if (SelectedTarget is null)
+                return (_history.Text ?? "") + "\nNO TARGET · status: " + _statusValue.Text;
+        }
+        await StartTestAsync();
+        return (_history.Text ?? "") + "\nanalysis: " + _analysis.Text + "\nstatus: " + _statusValue.Text + "\ndevice: " + _hmdValue.Text;
+    }
+
+    private void ComboBoxLog(string text) => Ui.AppendLine(_history, text);
+
     private async Task StartTestAsync()
     {
         if (_cts is not null) return;
@@ -900,7 +926,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
     {
         async Task<bool> HasUsbAddress() =>
             (await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "shell", "ip -o -4 addr show usb0")).Output.Contains("inet ");
-        if (await HasUsbAddress()) return;
+        if (await HasUsbAddress()) { await WaitUsbLinkAsync(adb); return; }
         // A USB Ethernet adapter on the Quest (eth0) is handled by the same "EthernetOverUsb"
         // service: a TRANSPORT_USB request takes it over and restarts eth0 – which drops ADB
         // over that adapter. The headset's USB port is busy with the adapter anyway.
@@ -918,7 +944,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
                 await Task.Delay(500);
                 if (await HasUsbAddress())
                 {
-                    await Task.Delay(1500); // let the PC bring up its USB network adapter
+                    await WaitUsbLinkAsync(adb);
                     return;
                 }
             }
@@ -933,6 +959,24 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         }
     }
 
+    /// <summary>
+    /// After switching on USB networking: wait (max. 10 s) until the headset has its IPv6 link-local address on usb0
+    /// and the PC's USB network adapter is up – the IPv4 address comes first, IPv6 a moment later. Without DHCP on the
+    /// PC side (e.g. Linux) the direct test runs over IPv6 link-local.
+    /// </summary>
+    private static async Task WaitUsbLinkAsync(AdbClient adb)
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            bool headset = false;
+            try { headset = (await adb.CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(5), "shell", "ip -6 -o addr show usb0")).Output.Contains("inet6 fe80:"); }
+            catch { }
+            bool pc = NetworkInterface.GetAllNetworkInterfaces().Any(n => n.OperationalStatus == OperationalStatus.Up && IsUsbAdapter(n));
+            if (headset && pc) return;
+            await Task.Delay(500);
+        }
+    }
+
     private async Task ReleaseNcmAsync()
     {
         UsbNetworkHold? hold = _ncmHold;
@@ -942,7 +986,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
 
     /// <summary>
     /// USB network adapter of the PC (the headset's USB NCM / RNDIS seen from the PC).
-    /// Windows: by its description; Linux: the interface's device is on the USB bus (/sys/class/net/X/device → …/usb…).
+    /// Windows: by its description; Linux: the interface's device is a USB interface (/sys/class/net/X/device/uevent).
     /// </summary>
     private static bool IsUsbAdapter(NetworkInterface nic)
     {
@@ -950,9 +994,10 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             return Regex.IsMatch(nic.Description, "NCM|RNDIS|Remote NDIS|USB.*(Ethernet|Network)", RegexOptions.IgnoreCase);
         try
         {
-            var link = new DirectoryInfo($"/sys/class/net/{nic.Name}/device");
-            string? target = link.ResolveLinkTarget(returnFinalTarget: true)?.FullName;
-            return target is not null && target.Contains("/usb", StringComparison.Ordinal);
+            // USB network adapters (cdc_ncm, rndis_host, r8152 …) are USB interfaces; PCI cards / Wi-Fi are not.
+            // (Not via the "device" symlink: it is relative and .NET resolves it against the wrong folder.)
+            string uevent = $"/sys/class/net/{nic.Name}/device/uevent";
+            return File.Exists(uevent) && File.ReadLines(uevent).Any(l => l.Trim() == "DEVTYPE=usb_interface");
         }
         catch { return Regex.IsMatch(nic.Name, @"^(usb\d|enx|enp\d+s\d+(f\d+)?u)"); }
     }

@@ -157,9 +157,13 @@ internal sealed class AdbClient
         return psi;
     }
 
+    /// <summary>
+    /// Long-running adb process. Its stdin is a pipe that stays open while the process runs: on Linux an inherited
+    /// stdin is usually /dev/null, and "adb shell" passes that EOF on – e.g. "toybox nc" then exits at once.
+    /// </summary>
     public Process Start(params string[] args)
     {
-        return Process.Start(CreateStartInfo(args))
+        return Process.Start(CreateStartInfo(args, redirectInput: true))
                ?? throw new AdbException(Loc.T("adb.exe konnte nicht gestartet werden.", "adb.exe could not be started."));
     }
 

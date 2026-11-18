@@ -6,6 +6,8 @@ namespace AdbTool;
 internal static class Program
 {
     public static bool SmokeTest { get; private set; }
+    /// <summary>Diagnostic: --ui-test speed &lt;seconds&gt; &lt;adb|direct&gt; &lt;out.png&gt;</summary>
+    public static string[]? UiTest { get; private set; }
 
     [STAThread]
     private static int Main(string[] args)
@@ -22,6 +24,12 @@ internal static class Program
         }
 
         SmokeTest = args.Contains("--smoke-test");
+        int uiTest = Array.IndexOf(args, "--ui-test");
+        if (uiTest >= 0 && uiTest + 4 < args.Length)
+        {
+            UiTest = args[(uiTest + 1)..(uiTest + 5)];
+            SmokeTest = true; // no single instance, settings are not saved
+        }
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportCrash(e.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, e) => { LogCrash(e.Exception); e.SetObserved(); };
 

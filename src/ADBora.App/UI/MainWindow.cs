@@ -187,7 +187,7 @@ internal sealed class MainWindow : Window
         _relocator = new NetworkRelocator(_state);
         _relocator.Status += text => { if (!_state.IsBusy) _busyLabel.Text = text ?? ""; };
 
-        if (_smokeTest)
+        if (_smokeTest && Program.UiTest is null)
         {
             DispatcherTimer.RunOnce(() => { _closingDone = true; Close(); }, TimeSpan.FromMilliseconds(1500));
             return;
@@ -207,6 +207,12 @@ internal sealed class MainWindow : Window
 
         _poll.Start();
 
+        if (Program.UiTest is { Length: >= 4 } t && t[0] == "speed")
+        {
+            await RunSpeedUiTestAsync(double.Parse(t[1], System.Globalization.CultureInfo.InvariantCulture), t[2] == "direct", t[3]);
+            return;
+        }
+
         if (_state.Settings.CheckUpdatesOnStart)
         {
             Updater.CleanupDownloads();
@@ -214,6 +220,51 @@ internal sealed class MainWindow : Window
             if (IsVisible && !_closeRequested)
                 await UpdateUi.CheckAsync(this, _state, ExitForUpdate, manual: false);
         }
+    }
+
+    /// <summary>Diagnostic --ui-test speed &lt;seconds&gt; &lt;adb|direct&gt; &lt;out&gt;: speed test via the real tab, then a picture of the window.</summary>
+    private async Task RunSpeedUiTestAsync(double seconds, bool direct, string output)
+    {
+        try
+        {
+            for (int i = 0; i < 50 && _state.SelectedDevice is not { IsReady: true }; i++) await Task.Delay(200);
+            _tabs.SelectedIndex = 3;
+            var page = _pages.OfType<SpeedTestPage>().First();
+            // progress pictures of all ADBora windows (dialogs included) every 5 s
+            int shot = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            timer.Tick += (_, _) =>
+            {
+                shot++;
+                var windows = (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Windows ?? Array.Empty<Window>();
+                int n = 0;
+                foreach (Window w in windows)
+                {
+                    try
+                    {
+                        using var bmp = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(Math.Max(1, (int)w.Bounds.Width), Math.Max(1, (int)w.Bounds.Height)));
+                        bmp.Render(w);
+#pragma warning disable CS0618
+                        bmp.Save($"{output}.p{shot:00}-{n++}.png");
+#pragma warning restore CS0618
+                    }
+                    catch { }
+                }
+            };
+            timer.Start();
+            string log = await page.AutoTestAsync(seconds, direct);
+            File.WriteAllText(output + ".log", log);
+            await Task.Delay(500);
+            var size = new PixelSize((int)Bounds.Width, (int)Bounds.Height);
+            using var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(size);
+            rtb.Render(this);
+#pragma warning disable CS0618
+            rtb.Save(output);
+#pragma warning restore CS0618
+        }
+        catch (Exception ex) { File.WriteAllText(output + ".log", "ERROR " + ex); }
+        _closingDone = true;
+        Close();
     }
 
     /// <summary>
