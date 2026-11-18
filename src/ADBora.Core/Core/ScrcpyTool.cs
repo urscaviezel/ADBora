@@ -55,6 +55,32 @@ internal static class ScrcpyTool
         return null;
     }
 
+    /// <summary>
+    /// scrcpy-server of a scrcpy installation: next to the program (release packages, Windows),
+    /// or in ../share/scrcpy (Linux distribution packages: /usr/bin/scrcpy → /usr/share/scrcpy/scrcpy-server).
+    /// </summary>
+    public static string? ServerFor(string exe)
+    {
+        string? env = Environment.GetEnvironmentVariable("SCRCPY_SERVER_PATH");
+        string dir = Path.GetDirectoryName(exe) ?? "";
+        foreach (string? candidate in new[]
+                 {
+                     env,
+                     Path.Combine(dir, "scrcpy-server"),
+                     Path.Combine(dir, "..", "share", "scrcpy", "scrcpy-server"),
+                     "/usr/share/scrcpy/scrcpy-server",
+                     "/usr/local/share/scrcpy/scrcpy-server",
+                 })
+        {
+            if (!string.IsNullOrEmpty(candidate) && File.Exists(candidate))
+                return Path.GetFullPath(candidate);
+        }
+        return null;
+    }
+
+    /// <summary>Casting needs scrcpy only on Windows (FFmpeg DLLs); on Linux the system FFmpeg is used.</summary>
+    public static bool CastingNeedsScrcpy => Platform.IsWindows;
+
     private static string OsName => Platform.IsWindows ? "Windows" : "Linux";
 
     public static async Task<string> VersionAsync(string exe)

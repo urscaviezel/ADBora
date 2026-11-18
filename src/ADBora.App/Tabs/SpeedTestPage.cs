@@ -4,6 +4,11 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
 using AdbTool.Cast;
 using AdbTool.Core;
 using AdbTool.UI;
@@ -23,7 +28,7 @@ internal sealed class ConnectionLostException : Exception
 /// Tab 3: ADB/USB throughput test (former ADB USB Speed Test).
 /// PC TCP sender → adb reverse → USB → "toybox nc" on the device → /dev/null.
 /// </summary>
-internal sealed class SpeedTestPage : UserControl, IPage
+internal sealed class SpeedTestPage : DockPanel, IPage
 {
     private const int ChunkSize = 1024 * 1024;
     private const int MaxRetries = 8;
@@ -38,19 +43,19 @@ internal sealed class SpeedTestPage : UserControl, IPage
     private readonly TextBox _rate = Ui.TextBox(110);
     private readonly RadioButton _pathAdb = Ui.Radio("ADB (adb reverse, über USB oder WLAN-ADB)", "ADB (adb reverse, via USB or Wi-Fi ADB)");
     private readonly RadioButton _pathDirect = Ui.Radio("TCP/IP direkt (USB-NCM, Ethernet oder WLAN)", "TCP/IP direct (USB NCM, Ethernet or Wi-Fi)");
-    private readonly DarkComboBox _directTarget = Ui.Combo(330);
-    private readonly DarkButton _detect = Ui.Button("Erkennen", "Detect");
+    private readonly ComboBox _directTarget = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 120, Margin = new Thickness(0, 4, 8, 4) };
+    private readonly Button _detect = Ui.Button("Erkennen", "Detect");
     private readonly List<DirectTarget> _targets = new();
     private static readonly int[] StreamCounts = { 1, 4, 8 };
-    private readonly DarkComboBox _streams = Ui.Combo(80);
-    private readonly LiveValue _resultDownValue = new();
-    private readonly LiveValue _resultUpValue = new();
+    private readonly ComboBox _streams = Ui.Combo(80);
+    private readonly TextBlock _resultDownValue = Live();
+    private readonly TextBlock _resultUpValue = Live();
     private readonly List<TcpClient> _directClients = new();
     private bool _proxApplied;
     private UsbNetworkHold? _ncmHold;
-    private readonly SpeedChart _chart = new() { Dock = DockStyle.Fill };
-    private readonly LiveValue _analysis = new() { ForeColor = Theme.Muted };
-    private readonly DarkButton _export = Ui.Button("Bericht speichern (PNG + CSV)", "Save report (PNG + CSV)");
+    private readonly SpeedChart _chart = new();
+    private readonly TextBlock _analysis = Live();
+    private readonly Button _export = Ui.Button("Bericht speichern (PNG + CSV)", "Save report (PNG + CSV)");
     private readonly Stopwatch _testClock = new();
     private int _phase;
     private string _firmware = "";
@@ -65,24 +70,24 @@ internal sealed class SpeedTestPage : UserControl, IPage
     private sealed record DirectTarget(string Name, IPAddress Address, bool Wifi = false);
     private readonly TextBox _duration = Ui.TextBox(110);
 
-    private readonly DarkButton _check = Ui.Button("Gerät prüfen", "Check device");
-    private readonly DarkButton _start = Ui.Button("Start", "Start", ButtonKind.Primary);
-    private readonly DarkButton _cancel = Ui.Button("Abbrechen", "Cancel", ButtonKind.Danger);
+    private readonly Button _check = Ui.Button("Gerät prüfen", "Check device");
+    private readonly Button _start = Ui.Button("Start", "Start", ButtonKind.Primary);
+    private readonly Button _cancel = Ui.Button("Abbrechen", "Cancel", ButtonKind.Danger);
 
-    private readonly Label _hmdValue = Ui.Value();
-    private readonly Label _statusValue = Ui.Value();
-    private readonly LiveValue _attemptValue = new();
-    private readonly LiveValue _targetValue = new();
-    private readonly LiveValue _elapsedValue = new();
-    private readonly LiveValue _remainingValue = new();
-    private readonly LiveValue _sentValue = new();
-    private readonly LiveValue _currentValue = new();
-    private readonly LiveValue _averageValue = new();
-    private readonly Label _lastDisconnectValue = Ui.Value();
-    private readonly DarkProgressBar _progress = new() { Maximum = 1000, Height = 26 };
+    private readonly TextBlock _hmdValue = Ui.Value();
+    private readonly TextBlock _statusValue = Ui.Value();
+    private readonly TextBlock _attemptValue = Live();
+    private readonly TextBlock _targetValue = Live();
+    private readonly TextBlock _elapsedValue = Live();
+    private readonly TextBlock _remainingValue = Live();
+    private readonly TextBlock _sentValue = Live();
+    private readonly TextBlock _currentValue = Live();
+    private readonly TextBlock _averageValue = Live();
+    private readonly TextBlock _lastDisconnectValue = Ui.Value();
+    private readonly ProgressBar _progress = new() { Maximum = 1000, Height = 8 };
     private readonly TextBox _history = Ui.Console();
 
-    private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 250 };
+    private readonly DispatcherTimer _uiTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
     private CancellationTokenSource? _cts;
     private TcpListener? _listener;
@@ -102,25 +107,28 @@ internal sealed class SpeedTestPage : UserControl, IPage
     private string _hmdModel = "";
     private (string De, string En) _status = ("Bereit", "Ready");
 
+    /// <summary>Value that changes several times per second: single line, no wrapping.</summary>
+    private static TextBlock Live() => new() { Text = "-", Margin = new Thickness(0, 4, 0, 4), TextTrimming = TextTrimming.CharacterEllipsis };
+
+    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
+
     public SpeedTestPage(AppState state)
     {
         _state = state;
-        BackColor = Theme.Background;
-        DoubleBuffered = true;
-        Padding = new Padding(20, 16, 20, 16);
+        Margin = new Thickness(20, 16);
 
         BuildUi();
 
         _port.Text = _state.Settings.SpeedPort.ToString(CultureInfo.InvariantCulture);
         _rate.Text = _state.Settings.SpeedRateMbps.ToString("0.###", CultureInfo.InvariantCulture);
         _duration.Text = _state.Settings.SpeedDurationSeconds.ToString("0.###", CultureInfo.InvariantCulture);
-        _max.Checked = true; // always start in max-speed mode (as before)
+        _max.IsChecked = true; // always start in max-speed mode (as before)
         UpdateModeState();
         ResetStats(ParseDouble(_duration.Text, 600));
 
         _uiTimer.Tick += (_, _) => PublishLiveStats();
         _state.BusyChanged += UpdateEnabled;
-        HandleDestroyed += (_, _) => _ncmHold?.Dispose();
+        DetachedFromVisualTree += (_, _) => _ncmHold?.Dispose();
         _state.SelectedDeviceChanged += () =>
         {
             if (_ncmHold is not null && _ncmHold.Serial != _state.SelectedDevice?.Serial) _ = ReleaseNcmAsync();
@@ -131,118 +139,90 @@ internal sealed class SpeedTestPage : UserControl, IPage
         };
         Loc.LanguageChanged += () => { RenderHmd(); _statusValue.Text = Loc.T(_status.De, _status.En); };
         // After the start the device is often reported as ready only a little later
-        _state.DevicesChanged += () => { if (IsHandleCreated) BeginInvoke(new Action(AutoDetect)); };
+        _state.DevicesChanged += () => Dispatcher.UIThread.Post(AutoDetect);
         UpdateEnabled();
     }
 
     private void BuildUi()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
         // Settings card -----------------------------------------------------
-        var settings = new Card("Verbindung / Testeinstellungen", "Connection / Test settings") { Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 0, 10, 12) };
+        var settings = new Card("Verbindung / Testeinstellungen", "Connection / Test settings");
         var grid = Ui.Grid(2);
         Ui.AddRow(grid, Ui.Label("TCP-Port:", "TCP port:", muted: true), Ui.Row(_port));
 
-        var paths = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0, 6, 0, 2) };
-        paths.Controls.Add(_pathAdb);
-        paths.Controls.Add(_pathDirect);
-        _pathAdb.Checked = !_state.Settings.SpeedDirect;
-        _pathDirect.Checked = _state.Settings.SpeedDirect;
-        _pathDirect.CheckedChanged += async (_, _) =>
+        _pathAdb.GroupName = _pathDirect.GroupName = "speedPath";
+        var paths = new StackPanel { Margin = new Thickness(0, 4, 0, 2), Children = { _pathAdb, _pathDirect } };
+        _pathAdb.IsChecked = !_state.Settings.SpeedDirect;
+        _pathDirect.IsChecked = _state.Settings.SpeedDirect;
+        _pathDirect.IsCheckedChanged += async (_, _) =>
         {
-            _state.Settings.SpeedDirect = _pathDirect.Checked;
+            _state.Settings.SpeedDirect = _pathDirect.IsChecked == true;
             _state.Settings.Save();
-            if (!_pathDirect.Checked) await ReleaseNcmAsync();
+            if (_pathDirect.IsChecked != true) await ReleaseNcmAsync();
             UpdateEnabled();
             AutoDetect();
         };
         Ui.AddRow(grid, Ui.Label("Messweg:", "Test path:", muted: true), paths);
         _detect.Click += async (_, _) => await DetectTargetsAsync();
-        _directTarget.Items.Add(Loc.T("– noch nicht erkannt –", "– not detected yet –"));
+        _directTarget.ItemsSource = new[] { Loc.T("– noch nicht erkannt –", "– not detected yet –") };
         _directTarget.SelectedIndex = 0;
-        var targetRow = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
-        targetRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        targetRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _directTarget.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        _directTarget.MinimumSize = new Size(Theme.S(120), 0);
-        targetRow.Controls.Add(_directTarget, 0, 0);
-        targetRow.Controls.Add(_detect, 1, 0);
+        _directTarget.SelectionChanged += (_, _) => UpdateEnabled();
+        var targetRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 6) };
+        Grid.SetColumn(_detect, 1);
+        _detect.Margin = default;
+        _detect.VerticalAlignment = VerticalAlignment.Center;
+        targetRow.Children.Add(_directTarget);
+        targetRow.Children.Add(_detect);
         Ui.AddRow(grid, Ui.Label("Ziel:", "Target:", muted: true), targetRow);
-        foreach (int n in StreamCounts) _streams.Items.Add(n.ToString(CultureInfo.InvariantCulture));
+        _streams.ItemsSource = StreamCounts.Select(n => n.ToString(CultureInfo.InvariantCulture)).ToList();
         _streams.SelectedIndex = Math.Max(0, Array.IndexOf(StreamCounts, _state.Settings.SpeedStreams));
-        _streams.SelectedIndexChanged += (_, _) => { _state.Settings.SpeedStreams = StreamCounts[Math.Max(0, _streams.SelectedIndex)]; _state.Settings.Save(); };
+        _streams.SelectionChanged += (_, _) => { _state.Settings.SpeedStreams = StreamCounts[Math.Max(0, _streams.SelectedIndex)]; _state.Settings.Save(); };
         var streamsHint = Ui.Label("parallele TCP-Verbindungen (mehrere = vergleichbar mit Online-Speedtests)", "parallel TCP connections (several = comparable to online speed tests)", muted: true);
-        streamsHint.Margin = new Padding(0, 8, 0, 0);
-        var streamsRow = Ui.Row(_streams, streamsHint);
-        streamsRow.WrapContents = true;
-        Ui.WrapTo(streamsHint, settings, 260);
+        var streamsRow = new DockPanel();
+        DockPanel.SetDock(_streams, Dock.Left);
+        streamsRow.Children.Add(_streams);
+        streamsRow.Children.Add(streamsHint);
         Ui.AddRow(grid, Ui.Label("Verbindungen:", "Connections:", muted: true), streamsRow);
 
-        var modes = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0, 6, 0, 6) };
-        modes.Controls.Add(_max);
-        modes.Controls.Add(_limited);
-        _limited.CheckedChanged += (_, _) => { UpdateModeState(); SaveSettings(); };
-        _max.CheckedChanged += (_, _) => { UpdateModeState(); SaveSettings(); };
+        _max.GroupName = _limited.GroupName = "speedMode";
+        var modes = new StackPanel { Margin = new Thickness(0, 4, 0, 4), Children = { _max, _limited } };
+        _limited.IsCheckedChanged += (_, _) => { UpdateModeState(); SaveSettings(); };
+        _max.IsCheckedChanged += (_, _) => { UpdateModeState(); SaveSettings(); };
         Ui.AddRow(grid, Ui.Label("Modus:", "Mode:", muted: true), modes);
 
-        var mbit = Ui.Value("Mbit/s");
-        mbit.Margin = new Padding(0, 8, 0, 0);
-        Ui.AddRow(grid, Ui.Label("Zielrate:", "Target rate:", muted: true), Ui.Row(_rate, mbit));
-        var seconds = Ui.Label("Sekunden pro Versuch", "seconds per attempt", muted: true);
-        seconds.Margin = new Padding(0, 8, 0, 0);
-        Ui.AddRow(grid, Ui.Label("Testdauer:", "Test duration:", muted: true), Ui.Row(_duration, seconds));
+        Ui.AddRow(grid, Ui.Label("Zielrate:", "Target rate:", muted: true), Ui.Row(_rate, Ui.Value("Mbit/s")));
+        Ui.AddRow(grid, Ui.Label("Testdauer:", "Test duration:", muted: true), Ui.Row(_duration, Ui.Label("Sekunden pro Versuch", "seconds per attempt", muted: true)));
         foreach (TextBox box in new[] { _port, _rate, _duration })
-            box.Leave += (_, _) => SaveSettings();
+            box.LostFocus += (_, _) => SaveSettings();
 
         _check.Click += async (_, _) => await CheckHmdAsync();
         _start.Click += async (_, _) => await StartTestAsync();
         _cancel.Click += (_, _) => CancelOperation();
         var buttons = Ui.Row(_check, _start, _cancel);
-        buttons.Margin = new Padding(0, 12, 0, 8);
-        Ui.AddRow(grid, buttons);
-        grid.SetColumnSpan(buttons, 2);
+        buttons.Margin = new Thickness(0, 12, 0, 8);
+        grid.AddRow(buttons);
 
         var info = Ui.Label(
             "Max-Speed-Modus: Der erste Versuch läuft ohne Limit. Wird die Verbindung getrennt, baut das Tool ADB/Netcat automatisch neu auf und reduziert die Datenrate schrittweise, bis ein kompletter Test stabil durchläuft.",
             "Max-Speed mode: The first attempt runs without a bandwidth limit. If the connection is lost, the tool automatically rebuilds ADB/Netcat and gradually reduces the transfer rate until a complete test runs stably.",
             muted: true);
-        Ui.WrapTo(info, settings);
-        info.Margin = new Padding(0, 6, 0, 0);
-        Ui.AddRow(grid, info);
-        grid.SetColumnSpan(info, 2);
+        info.Margin = new Thickness(0, 6, 0, 0);
+        grid.AddRow(info);
 
         var how = Ui.Label(
             "Messpfad ADB: PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Der Wert ist der Durchsatz dieses ADB/TCP-Pfads, nicht die theoretische USB-Busgeschwindigkeit. " +
             "TCP/IP direkt: PC ↔ Netzwerkadapter ↔ toybox nc auf dem Headset, ohne ADB – über USB-NCM (USB-Netzwerk; bei der Quest schaltet ADBora es bei Bedarf über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren), einen USB-Ethernet-Adapter am Headset oder WLAN; gemessen wird in beide Richtungen. Es wird nichts auf dem Gerät gespeichert.",
             "ADB path: PC TCP sender → adb reverse → USB/WLAN → toybox nc → /dev/null. The value is the throughput of this ADB/TCP path, not the theoretical USB bus speed. " +
             "TCP/IP direct: PC ↔ network adapter ↔ toybox nc on the headset, without ADB – over USB NCM (USB networking; on the Quest ADBora switches it on via the companion app when needed, on the Play For Dream enable it in the experimental settings), a USB Ethernet adapter on the headset or Wi-Fi; both directions are measured. Nothing is written to the device.", muted: true);
-        Ui.WrapTo(how, settings);
-        how.Margin = new Padding(0, 10, 0, 0);
-        Ui.AddRow(grid, how);
-        grid.SetColumnSpan(how, 2);
-
+        how.Margin = new Thickness(0, 10, 0, 0);
+        grid.AddRow(how);
         settings.SetContent(grid);
-        root.Controls.Add(settings, 0, 0);
 
         // Status card ---------------------------------------------------------
-        var status = new Card("Status", "Status") { Composited = true, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(10, 0, 0, 12) };
+        var status = new Card("Status", "Status");
         var statusGrid = Ui.Grid(2);
-        statusGrid.ColumnStyles[0] = new ColumnStyle(SizeType.Absolute, 150);
-        void Row(string de, string en, Control value)
-        {
-            if (value is Label label)
-            {
-                // Rarely changing texts (device, status) may wrap
-                label.AutoEllipsis = false;
-                label.MinimumSize = new Size(160, 0);
-                Ui.WrapTo(label, status, 170);
-            }
-            Ui.AddRow(statusGrid, Ui.Label(de, en, muted: true), value);
-        }
+        statusGrid.ColumnDefinitions[0].Width = new GridLength(150);
+        void Row(string de, string en, TextBlock value) => Ui.AddRow(statusGrid, Ui.Label(de, en, muted: true), value);
         Row("Gerät / HMD:", "Device / HMD:", _hmdValue);
         Row("Status:", "Status:", _statusValue);
         Row("Versuch:", "Attempt:", _attemptValue);
@@ -255,61 +235,44 @@ internal sealed class SpeedTestPage : UserControl, IPage
         Row("Letzter Abbruch:", "Last disconnect:", _lastDisconnectValue);
         Row("↓ Headset → PC:", "↓ Headset → PC:", _resultDownValue);
         Row("↑ PC → Headset:", "↑ PC → headset:", _resultUpValue);
-        // Live values (LiveValue): fixed size, draw only themselves → no flicker
-        _currentValue.Font = _averageValue.Font = _resultDownValue.Font = _resultUpValue.Font = Theme.SectionFont;
-        _averageValue.ForeColor = Theme.Accent;
-        _progress.Dock = DockStyle.Fill;
-        _progress.Margin = new Padding(0, 12, 0, 4);
-        Ui.AddRow(statusGrid, _progress);
-        statusGrid.SetColumnSpan(_progress, 2);
+        foreach (TextBlock big in new[] { _currentValue, _averageValue, _resultDownValue, _resultUpValue })
+        {
+            big.FontSize = AppTheme.SectionSize;
+            big.FontWeight = FontWeight.SemiBold;
+        }
+        _averageValue.Foreground = AppTheme.Accent;
+        _progress.Margin = new Thickness(0, 12, 0, 4);
+        statusGrid.AddRow(_progress);
         status.SetContent(statusGrid);
-        root.Controls.Add(status, 1, 0);
 
-        // History ------------------------------------------------------------
-        var historyCard = new Card("Protokoll (diese Sitzung)", "Log (this session)") { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        historyCard.SetContent(_history, fill: true);
+        var root = Responsive.TwoColumns(settings, status, breakpoint: 940, padding: default, firstPercent: 46);
 
         // Throughput chart -----------------------------------------------------
-        var chartCard = new Card("Durchsatz-Verlauf", "Throughput history") { Dock = DockStyle.Top, Height = Theme.S(340) };
-        var chartBox = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent };
-        chartBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        chartBox.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        chartBox.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        chartBox.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var chartCard = new Card("Durchsatz-Verlauf", "Throughput history");
         _analysis.Text = Loc.T("Einbrüche (unter 50 % des Medians) gelb, Aussetzer rot markiert.", "Dips (below 50 % of the median) marked yellow, stalls red.");
-        _analysis.Margin = new Padding(0, 6, 8, 6);
-        _export.Enabled = false;
-        _export.Click += (_, _) => ExportReport();
-        chartBox.Controls.Add(_analysis, 0, 0);
-        chartBox.Controls.Add(_export, 1, 0);
-        chartBox.Controls.Add(_chart, 0, 1);
-        chartBox.SetColumnSpan(_chart, 2);
-        chartCard.SetContent(chartBox, fill: true);
-        var chartSpacer = new Panel { Dock = DockStyle.Top, Height = Theme.S(12), BackColor = Color.Transparent };
+        _analysis.Foreground = AppTheme.Muted;
+        _export.IsEnabled = false;
+        _export.Click += async (_, _) => await ExportReport();
+        _export.Margin = default;
+        var chartTop = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+        DockPanel.SetDock(_export, Dock.Right);
+        chartTop.Children.Add(_export);
+        chartTop.Children.Add(_analysis);
+        _chart.Height = 260;
+        chartCard.SetContent(chartTop);
+        chartCard.SetContent(_chart);
 
-        Controls.Add(historyCard);
-        Controls.Add(chartSpacer);
-        Controls.Add(chartCard);
-        Controls.Add(root);
+        // History ------------------------------------------------------------
+        var historyCard = new Card("Protokoll (diese Sitzung)", "Log (this session)");
+        _history.Height = 180;
+        historyCard.SetContent(_history);
+        historyCard.Margin = default;
 
-        // Narrow window: stack settings above status; the page scrolls and the
-        // history gets a fixed height below.
-        bool narrowMode = false;
-        void UpdateScroll()
+        Children.Add(new ScrollViewer
         {
-            AutoScrollMinSize = narrowMode ? new Size(0, root.Height + chartCard.Height + chartSpacer.Height + historyCard.Height + Padding.Vertical) : Size.Empty;
-        }
-        Ui.Responsive(this, root, settings, status, breakpoint: 940, firstPercent: 46, changed: narrow =>
-        {
-            narrowMode = narrow;
-            AutoScroll = narrow;
-            historyCard.Dock = narrow ? DockStyle.Top : DockStyle.Fill;
-            if (narrow) historyCard.Height = Theme.S(220);
-            settings.Margin = narrow ? new Padding(0, 0, 0, Theme.S(12)) : new Padding(0, 0, Theme.S(10), Theme.S(12));
-            status.Margin = narrow ? new Padding(0, 0, 0, Theme.S(12)) : new Padding(Theme.S(10), 0, 0, Theme.S(12));
-            UpdateScroll();
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = new StackPanel { Children = { root, chartCard, historyCard } },
         });
-        root.SizeChanged += (_, _) => UpdateScroll();
     }
 
     // ------------------------------------------------------------------
@@ -327,7 +290,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
     /// </summary>
     private void AutoDetect()
     {
-        if (!_pathDirect.Checked || _cts is not null || _detecting || !Visible) return;
+        if (_pathDirect.IsChecked != true || _cts is not null || _detecting || !IsVisible) return;
         if (_state.SelectedDevice is not { IsReady: true } d || !_state.HasAdb || _state.IsBusy) return;
         if (_targets.Count > 0 && _targetsSerial == d.Serial) return;
         _ = DetectTargetsAsync();
@@ -337,28 +300,27 @@ internal sealed class SpeedTestPage : UserControl, IPage
     {
         _targets.Clear();
         _targetsSerial = null;
-        _directTarget.Items.Clear();
-        _directTarget.Items.Add(Loc.T("– noch nicht erkannt –", "– not detected yet –"));
+        _directTarget.ItemsSource = new[] { Loc.T("– noch nicht erkannt –", "– not detected yet –") };
         _directTarget.SelectedIndex = 0;
     }
 
-    private void UpdateModeState() => _rate.Enabled = !_max.Checked;
+    private void UpdateModeState() => _rate.IsEnabled = _max.IsChecked != true;
 
     private void UpdateEnabled()
     {
         bool running = _cts is not null;
         bool idle = !_state.IsBusy;
         bool ready = _state.HasAdb && _state.SelectedDevice?.IsReady == true;
-        _check.Enabled = idle && ready;
-        _start.Enabled = idle && ready;
-        _cancel.Enabled = running && !_cts!.IsCancellationRequested;
-        bool direct = _pathDirect.Checked;
-        _port.Enabled = _duration.Enabled = _pathAdb.Enabled = _pathDirect.Enabled = !running;
-        _max.Enabled = _limited.Enabled = !running && !direct;
-        _rate.Enabled = !running && !_max.Checked && !direct;
-        _directTarget.Enabled = _streams.Enabled = !running && direct;
-        _detect.Enabled = idle && ready && direct && !_detecting;
-        if (direct) _start.Enabled = idle && ready && SelectedTarget is not null;
+        _check.IsEnabled = idle && ready;
+        _start.IsEnabled = idle && ready;
+        _cancel.IsEnabled = running && !_cts!.IsCancellationRequested;
+        bool direct = _pathDirect.IsChecked == true;
+        _port.IsEnabled = _duration.IsEnabled = _pathAdb.IsEnabled = _pathDirect.IsEnabled = !running;
+        _max.IsEnabled = _limited.IsEnabled = !running && !direct;
+        _rate.IsEnabled = !running && _max.IsChecked != true && !direct;
+        _directTarget.IsEnabled = _streams.IsEnabled = !running && direct;
+        _detect.IsEnabled = idle && ready && direct && !_detecting;
+        if (direct) _start.IsEnabled = idle && ready && SelectedTarget is not null;
     }
 
     private void SetStatus(string de, string en)
@@ -373,7 +335,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             _hmdValue.Text = $"{Loc.T("Verbunden", "Connected")}: {_hmdModel}";
         else
             _hmdValue.Text = Loc.T("Nicht geprüft", "Not checked");
-        _hmdValue.ForeColor = _hmdChecked ? Theme.Accent : Theme.Text;
+        _hmdValue.Foreground = _hmdChecked ? AppTheme.Accent : AppTheme.Text;
     }
 
     private void SaveSettings()
@@ -387,59 +349,60 @@ internal sealed class SpeedTestPage : UserControl, IPage
         _state.Settings.Save();
     }
 
-    private static double ParseDouble(string text, double fallback) =>
+    private static double ParseDouble(string? text, double fallback) =>
+        text is null ? fallback :
         double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
 
-    private bool ValidateInputs(out int port, out double duration, out double rate)
+    private async Task<(bool Ok, int Port, double Duration, double Rate)> ValidateInputs()
     {
-        port = 0; duration = 0; rate = 0;
+        int port; double duration, rate = 0;
 
         if (!_state.HasAdb)
         {
-            MessageBox.Show(FindForm(), Loc.T("ADB ist nicht eingerichtet. Bitte im Tab „Allgemeine Einstellungen“ adb.exe auswählen.",
-                "ADB is not set up. Please choose adb.exe in the \"General settings\" tab."), "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return false;
+            await Dialogs.Message(Owner, Loc.T("ADB ist nicht eingerichtet. Bitte im Tab „Allgemeine Einstellungen“ adb.exe auswählen.",
+                "ADB is not set up. Please choose adb.exe in the \"General settings\" tab."), "ADBora", MessageKind.Error);
+            return default;
         }
         if (_state.SelectedDevice is not { IsReady: true })
         {
-            MessageBox.Show(FindForm(), Loc.T("Bitte ein verbundenes, autorisiertes Gerät auswählen.", "Please select a connected, authorized device."), "ADBora");
-            return false;
+            await Dialogs.Message(Owner, Loc.T("Bitte ein verbundenes, autorisiertes Gerät auswählen.", "Please select a connected, authorized device."), "ADBora");
+            return default;
         }
         if (!int.TryParse(_port.Text, out port) || port is < 1 or > 65535)
         {
-            MessageBox.Show(FindForm(), Loc.T("Ungültiger TCP-Port.", "Invalid TCP port."), "ADBora");
-            return false;
+            await Dialogs.Message(Owner, Loc.T("Ungültiger TCP-Port.", "Invalid TCP port."), "ADBora");
+            return default;
         }
         duration = ParseDouble(_duration.Text, -1);
         if (duration <= 0)
         {
-            MessageBox.Show(FindForm(), Loc.T("Ungültige Testdauer.", "Invalid test duration."), "ADBora");
-            return false;
+            await Dialogs.Message(Owner, Loc.T("Ungültige Testdauer.", "Invalid test duration."), "ADBora");
+            return default;
         }
-        if (_limited.Checked)
+        if (_limited.IsChecked == true)
         {
             rate = ParseDouble(_rate.Text, -1);
             if (rate <= 0)
             {
-                MessageBox.Show(FindForm(), Loc.T("Ungültige Zielrate.", "Invalid target rate."), "ADBora");
-                return false;
+                await Dialogs.Message(Owner, Loc.T("Ungültige Zielrate.", "Invalid target rate."), "ADBora");
+                return default;
             }
         }
 
         SaveSettings();
-        return true;
+        return (true, port, duration, rate);
     }
 
     // ------------------------------------------------------------------
 
     private async Task CheckHmdAsync()
     {
-        if (!ValidateInputs(out _, out _, out _))
+        if (!(await ValidateInputs()).Ok)
             return;
         if (!_state.TryBeginOperation(Loc.T("Gerät wird geprüft", "Checking device")))
             return;
 
-        _adb = _state.DeviceAdb;
+        _adb = _state.DeviceAdb!; // validated: device ready
         _hmdValue.Text = Loc.T("Prüfe...", "Checking...");
         try
         {
@@ -452,7 +415,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
         {
             _hmdChecked = false;
             _hmdValue.Text = Loc.T($"Nicht verbunden: {ex.Message}", $"Not connected: {ex.Message}");
-            _hmdValue.ForeColor = Theme.Error;
+            _hmdValue.Foreground = AppTheme.Error;
         }
         finally
         {
@@ -462,17 +425,19 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
     private async Task StartTestAsync()
     {
-        if (_cts is not null || !ValidateInputs(out int port, out double duration, out double rate))
-            return;
+        if (_cts is not null) return;
+        var (ok, port, duration, rate) = await ValidateInputs();
+        if (!ok) return;
         if (!_state.TryBeginOperation(Loc.T("Speedtest läuft", "Speed test running")))
             return;
 
-        _adb = _state.DeviceAdb;
+        _adb = _state.DeviceAdb!; // validated: device ready
         _cts = new CancellationTokenSource();
-        Ui.Frozen(this, () => { UpdateEnabled(); ResetStats(duration); }); // one repaint instead of many
+        UpdateEnabled();
+        ResetStats(duration);
 
-        bool max = _max.Checked;
-        bool direct = _pathDirect.Checked;
+        bool max = _max.IsChecked == true;
+        bool direct = _pathDirect.IsChecked == true;
         string result = "";
 
         try
@@ -483,7 +448,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             await KeepAwakeAsync(true);
             _firmware = await GetFirmwareAsync();
             _chart.Clear();
-            _export.Enabled = false;
+            _export.IsEnabled = false;
             _lastAnalysisT = 0;
             _testClock.Restart();
             int streamsUsed = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
@@ -510,7 +475,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
         {
             SetStatus($"Fehler: {ex.Message}", $"Error: {ex.Message}");
             result = Loc.T("Fehler: ", "Error: ") + ex.Message;
-            MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            await Dialogs.Message(Owner, ex.Message, "ADBora", MessageKind.Error);
         }
         finally
         {
@@ -525,7 +490,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
                 _analysis.Text = analysis.Summary(!Loc.IsGerman);
                 Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {analysis.Summary(!Loc.IsGerman)}");
             }
-            _export.Enabled = _chart.HasData;
+            _export.IsEnabled = _chart.HasData;
             if (direct)
             {
                 await StopDeviceNcAsync(port);
@@ -741,7 +706,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
     }
 
     /// <summary>Only touches the label if the text really changed (avoids needless repaints).</summary>
-    private static void SetText(Control label, string text)
+    private static void SetText(TextBlock label, string text)
     {
         if (label.Text != text)
             label.Text = text;
@@ -851,7 +816,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
             return;
         }
         _detecting = true;
-        _detect.Enabled = false;
+        _detect.IsEnabled = false;
         SetStatus("Suche Netzwerk-Schnittstellen...", "Looking for network interfaces...");
         var found = new List<DirectTarget>();
         try
@@ -882,7 +847,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
                 // otherwise IPv6 link-local over every USB network adapter of the PC
                 var ip6 = v6.FirstOrDefault(x => x.If == usbIf);
                 if (ip6.Ip is null) continue;
-                foreach (NetworkInterface nic in pcNics.Where(n => Regex.IsMatch(n.Description, "NCM|RNDIS|Remote NDIS|USB.*(Ethernet|Network)", RegexOptions.IgnoreCase)))
+                foreach (NetworkInterface nic in pcNics.Where(IsUsbAdapter))
                 {
                     if (!nic.Supports(NetworkInterfaceComponent.IPv6)) continue;
                     var addr = new IPAddress(ip6.Ip.GetAddressBytes(), nic.GetIPProperties().GetIPv6Properties().Index);
@@ -902,11 +867,11 @@ internal sealed class SpeedTestPage : UserControl, IPage
 
         _targets.Clear();
         _targets.AddRange(found);
-        _directTarget.Items.Clear();
-        foreach (DirectTarget t in _targets) _directTarget.Items.Add(t.Name);
+        _directTarget.ItemsSource = _targets.Count > 0
+            ? _targets.Select(t => t.Name).ToList()
+            : new List<string> { Loc.T("– keine Schnittstelle gefunden –", "– no interface found –") };
         if (_targets.Count == 0)
         {
-            _directTarget.Items.Add(Loc.T("– keine Schnittstelle gefunden –", "– no interface found –"));
             SetStatus("Keine Netzwerk-Schnittstelle gefunden.", "No network interface found.");
         }
         else
@@ -953,14 +918,14 @@ internal sealed class SpeedTestPage : UserControl, IPage
                 await Task.Delay(500);
                 if (await HasUsbAddress())
                 {
-                    await Task.Delay(1500); // let Windows bring up its USB network adapter
+                    await Task.Delay(1500); // let the PC bring up its USB network adapter
                     return;
                 }
             }
-            MessageBox.Show(FindForm(), Loc.T(
+            await Dialogs.Message(Owner, Loc.T(
                 "Die Quest hat das USB-Netzwerk nicht eingeschaltet. Beim ersten Mal fragt sie im Headset um Erlaubnis – bitte dort zustimmen (\"Immer erlauben\") und danach nochmals \"Erkennen\" klicken.",
                 "The Quest did not switch on USB networking. The first time it asks for permission in the headset – please allow it there (\"Always allow\") and click \"Detect\" again."),
-                "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "ADBora");
         }
         catch (Exception ex)
         {
@@ -973,6 +938,23 @@ internal sealed class SpeedTestPage : UserControl, IPage
         UsbNetworkHold? hold = _ncmHold;
         _ncmHold = null;
         if (hold is not null) await hold.StopAsync();
+    }
+
+    /// <summary>
+    /// USB network adapter of the PC (the headset's USB NCM / RNDIS seen from the PC).
+    /// Windows: by its description; Linux: the interface's device is on the USB bus (/sys/class/net/X/device → …/usb…).
+    /// </summary>
+    private static bool IsUsbAdapter(NetworkInterface nic)
+    {
+        if (OperatingSystem.IsWindows())
+            return Regex.IsMatch(nic.Description, "NCM|RNDIS|Remote NDIS|USB.*(Ethernet|Network)", RegexOptions.IgnoreCase);
+        try
+        {
+            var link = new DirectoryInfo($"/sys/class/net/{nic.Name}/device");
+            string? target = link.ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+            return target is not null && target.Contains("/usb", StringComparison.Ordinal);
+        }
+        catch { return Regex.IsMatch(nic.Name, @"^(usb\d|enx|enp\d+s\d+(f\d+)?u)"); }
     }
 
     private static bool SameSubnet(IPAddress a, IPAddress b, int prefix)
@@ -1167,7 +1149,7 @@ internal sealed class SpeedTestPage : UserControl, IPage
     }
 
     /// <summary>PNG report + CSV raw data (e.g. as evidence for the manufacturer's support).</summary>
-    private void ExportReport()
+    private async Task ExportReport()
     {
         try
         {
@@ -1183,11 +1165,11 @@ internal sealed class SpeedTestPage : UserControl, IPage
             if (_chart.Analyze() is { } a) header.Add(a.Summary(!Loc.IsGerman));
             var (png, csv) = _chart.Export(folder, name, header);
             Ui.AppendLine(_history, Loc.T($"Bericht gespeichert: {png} / {Path.GetFileName(csv)}", $"Report saved: {png} / {Path.GetFileName(csv)}"));
-            SettingsPage.OpenPath(folder);
+            Platform.OpenFolder(folder);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            await Dialogs.Message(Owner, ex.Message, "ADBora", MessageKind.Warning);
         }
     }
 

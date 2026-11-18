@@ -1,6 +1,9 @@
-﻿using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Text;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using AdbTool.Core;
 using AdbTool.UI;
 
@@ -27,28 +30,22 @@ internal sealed record SpeedAnalysis(double Median, double Average, double Min, 
 /// </summary>
 internal sealed class SpeedChart : Control
 {
-    public static readonly Color[] PhaseColors = { ColorTranslator.FromHtml("#67d5b5"), ColorTranslator.FromHtml("#6fa8ff"), ColorTranslator.FromHtml("#e07bb5"), ColorTranslator.FromHtml("#e0b060") };
-    private static readonly Color RssiColor = ColorTranslator.FromHtml("#e0b060");
-    private static readonly Color RetryColor = ColorTranslator.FromHtml("#ef7b7b");
+    private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
+    public static readonly IBrush[] PhaseColors = { B("#67d5b5"), B("#6fa8ff"), B("#e07bb5"), B("#e0b060") };
+    private static readonly IBrush RssiColor = B("#e0b060");
+    private static readonly IBrush RetryColor = B("#ef7b7b");
 
     private readonly List<RateSample> _samples = new();
     private readonly List<WifiSample> _wifi = new();
     private readonly List<string> _phases = new();
     private readonly object _gate = new();
 
-    public SpeedChart()
-    {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Theme.Card;
-        Font = Theme.BaseFont;
-    }
-
     public bool HasData { get { lock (_gate) return _samples.Count > 1; } }
 
     public void Clear()
     {
         lock (_gate) { _samples.Clear(); _wifi.Clear(); _phases.Clear(); }
-        Invalidate();
+        Avalonia.Threading.Dispatcher.UIThread.Post(InvalidateVisual);
     }
 
     /// <summary>Starts a new phase (e.g. "↓ headset → PC") and returns its index.</summary>
@@ -60,13 +57,13 @@ internal sealed class SpeedChart : Control
     public void Add(RateSample s)
     {
         lock (_gate) _samples.Add(s);
-        Invalidate();
+        Avalonia.Threading.Dispatcher.UIThread.Post(InvalidateVisual);
     }
 
     public void Add(WifiSample w)
     {
         lock (_gate) _wifi.Add(w);
-        Invalidate();
+        Avalonia.Threading.Dispatcher.UIThread.Post(InvalidateVisual);
     }
 
     /// <summary>Dips/stalls per phase; the first second of each phase (ramp-up) is ignored.</summary>
@@ -124,70 +121,75 @@ internal sealed class SpeedChart : Control
         return v.Length == 0 ? 0 : v.Length % 2 == 1 ? v[v.Length / 2] : (v[v.Length / 2 - 1] + v[v.Length / 2]) / 2;
     }
 
-    protected override void OnPaint(PaintEventArgs e) => Draw(e.Graphics, ClientRectangle, Theme.S(1f));
+    public override void Render(DrawingContext g) => Draw(g, new Rect(Bounds.Size), 1, AppTheme.BaseSize - 1);
+
+    private static FormattedText Text(string text, double size, IBrush brush, FontWeight weight = FontWeight.Normal) =>
+        new(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(FontFamily.Default, FontStyle.Normal, weight), size, brush);
 
     /// <summary>Draws the chart (also used for the PNG report).</summary>
-    private void Draw(Graphics g, Rectangle area, float k)
+    private void Draw(DrawingContext g, Rect area, double k, double fontSize)
     {
-        // Only the own area: the PNG report draws its header above it on the same bitmap.
-        using (var bg = new SolidBrush(Theme.Card)) g.FillRectangle(bg, area);
+        g.FillRectangle(AppTheme.Card, area);
         RateSample[] samples;
         WifiSample[] wifi;
         string[] phases;
         lock (_gate) { samples = _samples.ToArray(); wifi = _wifi.ToArray(); phases = _phases.ToArray(); }
+        void Label(string s, double x, double y, IBrush brush, bool right = false, double width = 0)
+        {
+            FormattedText t = Text(s, fontSize, brush);
+            g.DrawText(t, new Point(right ? x + width - t.Width : x, y));
+        }
         if (samples.Length < 2)
         {
-            TextRenderer.DrawText(g, Loc.T("Hier erscheint der Verlauf der Übertragungsrate während eines Tests.", "The transfer rate history appears here during a test."),
-                Font, area, Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            FormattedText t = Text(Loc.T("Hier erscheint der Verlauf der Übertragungsrate während eines Tests.", "The transfer rate history appears here during a test."), fontSize, AppTheme.Muted);
+            g.DrawText(t, new Point(area.X + (area.Width - t.Width) / 2, area.Y + (area.Height - t.Height) / 2));
             return;
         }
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        int axisW = (int)(64 * k), legendH = (int)(22 * k);
+        double axisW = 64 * k, legendH = 22 * k;
         bool hasWifi = wifi.Length > 0;
-        int wifiH = hasWifi ? (int)(area.Height * 0.3) : 0;
-        var rate = new Rectangle(area.Left + axisW, area.Top + legendH, area.Width - axisW - (int)(56 * k), area.Height - legendH - wifiH - (int)(22 * k) - (hasWifi ? (int)(10 * k) : 0));
+        double wifiH = hasWifi ? area.Height * 0.3 : 0;
+        var rate = new Rect(area.Left + axisW, area.Top + legendH, area.Width - axisW - 56 * k, area.Height - legendH - wifiH - 22 * k - (hasWifi ? 10 * k : 0));
         if (rate.Width < 40 || rate.Height < 30) return;
         double tMax = Math.Max(samples[^1].T, wifi.Length > 0 ? wifi[^1].T : 0);
         tMax = Math.Max(tMax, 1);
-        float X(double t) => rate.Left + (float)(t / tMax * rate.Width);
+        double X(double t) => rate.Left + t / tMax * rate.Width;
 
         // Legend: phases
-        int lx = area.Left + axisW;
+        double lx = area.Left + axisW;
         for (int i = 0; i < phases.Length; i++)
         {
-            using var b = new SolidBrush(PhaseColors[i % PhaseColors.Length]);
-            g.FillRectangle(b, lx, area.Top + (int)(7 * k), (int)(14 * k), (int)(4 * k));
-            Size sz = TextRenderer.MeasureText(phases[i], Font);
-            TextRenderer.DrawText(g, phases[i], Font, new Point(lx + (int)(18 * k), area.Top), Theme.Text);
-            lx += sz.Width + (int)(34 * k);
+            g.FillRectangle(PhaseColors[i % PhaseColors.Length], new Rect(lx, area.Top + 7 * k, 14 * k, 4 * k));
+            FormattedText t = Text(phases[i], fontSize, AppTheme.Text);
+            g.DrawText(t, new Point(lx + 18 * k, area.Top));
+            lx += t.Width + 52 * k;
         }
         if (hasWifi)
         {
-            foreach ((string name, Color c) in new[] { ("RSSI (dBm)", RssiColor), (Loc.T("Paketwiederholungen (%)", "Packet retries (%)"), RetryColor) })
+            foreach ((string name, IBrush c) in new[] { ("RSSI (dBm)", RssiColor), (Loc.T("Paketwiederholungen (%)", "Packet retries (%)"), RetryColor) })
             {
-                using var b = new SolidBrush(c);
-                g.FillRectangle(b, lx, area.Top + (int)(7 * k), (int)(14 * k), (int)(4 * k));
-                TextRenderer.DrawText(g, name, Font, new Point(lx + (int)(18 * k), area.Top), Theme.Muted);
-                lx += TextRenderer.MeasureText(name, Font).Width + (int)(34 * k);
+                g.FillRectangle(c, new Rect(lx, area.Top + 7 * k, 14 * k, 4 * k));
+                FormattedText t = Text(name, fontSize, AppTheme.Muted);
+                g.DrawText(t, new Point(lx + 18 * k, area.Top));
+                lx += t.Width + 52 * k;
             }
         }
 
         // Rate plot
-        using (var back = new SolidBrush(Theme.Console)) g.FillRectangle(back, rate);
+        g.FillRectangle(AppTheme.Console, rate);
         double max = Math.Max(10, samples.Max(s => s.Mbps)) * 1.1;
         double step = NiceStep(max / 4);
-        using (var gridPen = new Pen(Theme.Grid))
+        var gridPen = new Pen(AppTheme.Grid, 1);
+        for (double v = 0; v <= max; v += step)
         {
-            for (double v = 0; v <= max; v += step)
-            {
-                float y = rate.Bottom - (float)(v / max * rate.Height);
-                g.DrawLine(gridPen, rate.Left, y, rate.Right, y);
-                TextRenderer.DrawText(g, v.ToString("0", CultureInfo.InvariantCulture), Font, new Rectangle(area.Left, (int)y - (int)(9 * k), axisW - (int)(6 * k), (int)(18 * k)), Theme.DisabledText, TextFormatFlags.Right);
-            }
+            double y = rate.Bottom - v / max * rate.Height;
+            g.DrawLine(gridPen, new Point(rate.Left, y), new Point(rate.Right, y));
+            Label(v.ToString("0", CultureInfo.InvariantCulture), area.Left, y - 9 * k, AppTheme.DisabledText, right: true, width: axisW - 6 * k);
         }
-        TextRenderer.DrawText(g, "Mbit/s", Font, new Point(area.Left, rate.Top - (int)(2 * k)), Theme.DisabledText);
+        Label("Mbit/s", area.Left, rate.Top - 18 * k, AppTheme.DisabledText);
 
         // Dips / stalls as coloured bands (per phase median)
+        IBrush stallBand = new SolidColorBrush(Color.FromArgb(90, 0xef, 0x7b, 0x7b));
+        IBrush dipBand = new SolidColorBrush(Color.FromArgb(45, 0xe0, 0xb0, 0x60));
         foreach (var phase in samples.GroupBy(s => s.Phase))
         {
             var list = phase.OrderBy(s => s.T).ToList();
@@ -200,64 +202,72 @@ internal sealed class SpeedChart : Control
                 bool stall = s.Mbps < Math.Max(1.0, median * 0.02);
                 bool dip = !stall && s.Mbps < median * 0.5;
                 if (!stall && !dip) continue;
-                using var band = new SolidBrush(Color.FromArgb(stall ? 90 : 45, stall ? Theme.Error : Theme.Warning));
-                float x1 = X(steady[i - 1].T), x2 = X(s.T);
-                g.FillRectangle(band, x1, rate.Top, Math.Max(1, x2 - x1), rate.Height);
+                double x1 = X(steady[i - 1].T), x2 = X(s.T);
+                g.FillRectangle(stall ? stallBand : dipBand, new Rect(x1, rate.Top, Math.Max(1, x2 - x1), rate.Height));
             }
         }
 
         // Rate lines
         foreach (var phase in samples.GroupBy(s => s.Phase))
         {
-            using var pen = new Pen(PhaseColors[phase.Key % PhaseColors.Length], 1.6f * k);
-            PointF? prev = null;
-            foreach (var s in phase.OrderBy(s => s.T))
+            var pen = new Pen(PhaseColors[phase.Key % PhaseColors.Length], 1.6 * k, lineJoin: PenLineJoin.Round);
+            var geo = new StreamGeometry();
+            using (var c = geo.Open())
             {
-                var p = new PointF(X(s.T), rate.Bottom - (float)(Math.Min(s.Mbps, max) / max * rate.Height));
-                if (prev is { } pp) g.DrawLine(pen, pp, p);
-                prev = p;
+                bool first = true;
+                foreach (var s in phase.OrderBy(s => s.T))
+                {
+                    var p = new Point(X(s.T), rate.Bottom - Math.Min(s.Mbps, max) / max * rate.Height);
+                    if (first) { c.BeginFigure(p, false); first = false; } else c.LineTo(p);
+                }
+                if (!first) c.EndFigure(false);
             }
+            g.DrawGeometry(null, pen, geo);
         }
 
         // Time axis
         double tStep = NiceStep(tMax / 8);
         for (double t = 0; t <= tMax + 1e-6; t += tStep)
         {
-            float x = X(t);
+            double x = X(t);
             string label = t >= 120 ? $"{(int)t / 60}:{(int)t % 60:00}" : $"{t:0} s";
-            TextRenderer.DrawText(g, label, Font, new Point((int)x - (int)(14 * k), (hasWifi ? rate.Bottom : area.Bottom - (int)(20 * k)) + (int)(2 * k)), Theme.DisabledText);
+            Label(label, x - 14 * k, (hasWifi ? rate.Bottom : area.Bottom - 20 * k) + 2 * k, AppTheme.DisabledText);
         }
 
         // Wi-Fi panel: RSSI (left scale -90…-20 dBm) and retry rate (right scale 0…max %)
         if (hasWifi)
         {
-            var wr = new Rectangle(rate.Left, rate.Bottom + (int)(22 * k), rate.Width, wifiH - (int)(4 * k));
+            var wr = new Rect(rate.Left, rate.Bottom + 22 * k, rate.Width, wifiH - 4 * k);
             if (wr.Height < 20) return;
-            using (var back = new SolidBrush(Theme.Console)) g.FillRectangle(back, wr);
-            using (var gridPen = new Pen(Theme.Grid)) g.DrawLine(gridPen, wr.Left, wr.Top + wr.Height / 2, wr.Right, wr.Top + wr.Height / 2);
+            g.FillRectangle(AppTheme.Console, wr);
+            g.DrawLine(gridPen, new Point(wr.Left, wr.Top + wr.Height / 2), new Point(wr.Right, wr.Top + wr.Height / 2));
             const double rMin = -90, rMax = -20;
             double retryMax = Math.Max(10, wifi.Max(w => w.RetryPercent) * 1.1);
-            TextRenderer.DrawText(g, "-20", Font, new Rectangle(area.Left, wr.Top - (int)(2 * k), axisW - (int)(6 * k), (int)(18 * k)), RssiColor, TextFormatFlags.Right);
-            TextRenderer.DrawText(g, "-90", Font, new Rectangle(area.Left, wr.Bottom - (int)(16 * k), axisW - (int)(6 * k), (int)(18 * k)), RssiColor, TextFormatFlags.Right);
-            TextRenderer.DrawText(g, $"{retryMax:0} %", Font, new Point(wr.Right + (int)(4 * k), wr.Top - (int)(2 * k)), RetryColor);
-            TextRenderer.DrawText(g, "0 %", Font, new Point(wr.Right + (int)(4 * k), wr.Bottom - (int)(16 * k)), RetryColor);
-            void Line(Func<WifiSample, double> value, double lo, double hi, Color color)
+            Label("-20", area.Left, wr.Top - 2 * k, RssiColor, right: true, width: axisW - 6 * k);
+            Label("-90", area.Left, wr.Bottom - 16 * k, RssiColor, right: true, width: axisW - 6 * k);
+            Label($"{retryMax:0} %", wr.Right + 4 * k, wr.Top - 2 * k, RetryColor);
+            Label("0 %", wr.Right + 4 * k, wr.Bottom - 16 * k, RetryColor);
+            void Line(Func<WifiSample, double> value, double lo, double hi, IBrush color)
             {
-                using var pen = new Pen(color, 1.6f * k);
-                PointF? prev = null;
-                foreach (var w in wifi)
+                var pen = new Pen(color, 1.6 * k, lineJoin: PenLineJoin.Round);
+                var geo = new StreamGeometry();
+                using (var c = geo.Open())
                 {
-                    double v = Math.Clamp(value(w), lo, hi);
-                    var p = new PointF(X(w.T), wr.Bottom - (float)((v - lo) / (hi - lo) * wr.Height));
-                    if (prev is { } pp) g.DrawLine(pen, pp, p);
-                    prev = p;
+                    bool first = true;
+                    foreach (var w in wifi)
+                    {
+                        double v = Math.Clamp(value(w), lo, hi);
+                        var p = new Point(X(w.T), wr.Bottom - (v - lo) / (hi - lo) * wr.Height);
+                        if (first) { c.BeginFigure(p, false); first = false; } else c.LineTo(p);
+                    }
+                    if (!first) c.EndFigure(false);
                 }
+                g.DrawGeometry(null, pen, geo);
             }
             Line(w => w.Rssi, rMin, rMax, RssiColor);
             Line(w => w.RetryPercent, 0, retryMax, RetryColor);
             var last = wifi[^1];
-            TextRenderer.DrawText(g, $"{last.Rssi} dBm · {last.Frequency} MHz · Tx {last.TxLink} / Rx {last.RxLink} Mbit/s",
-                Font, new Point(wr.Left + (int)(6 * k), wr.Top + (int)(2 * k)), Theme.Muted);
+            Label($"{last.Rssi} dBm · {last.Frequency} MHz · Tx {last.TxLink} / Rx {last.RxLink} Mbit/s", wr.Left + 6 * k, wr.Top + 2 * k, AppTheme.Muted);
         }
     }
 
@@ -269,34 +279,32 @@ internal sealed class SpeedChart : Control
         return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
     }
 
-    /// <summary>Saves PNG (chart + header with device, firmware, target, summary) and CSV with all samples.</summary>
+    /// <summary>Saves PNG (chart + header with device, firmware, target, summary) and CSV with all samples. UI thread.</summary>
     public (string Png, string Csv) Export(string folder, string baseName, IReadOnlyList<string> header)
     {
         Directory.CreateDirectory(folder);
         string png = Path.Combine(folder, baseName + ".png"), csv = Path.Combine(folder, baseName + ".csv");
         const int w = 1800, h = 900;
-        float k = 1.6f;
-        using (var bmp = new Bitmap(w, h))
-        using (Graphics g = Graphics.FromImage(bmp))
+        using (var bmp = new RenderTargetBitmap(new PixelSize(w, h)))
         {
-            g.Clear(Theme.Card);
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-            using var title = new Font("Segoe UI Semibold", 15f);
-            using var body = new Font("Segoe UI", 11f);
-            int y = 18;
-            TextRenderer.DrawText(g, header.Count > 0 ? header[0] : "ADBora", title, new Point(24, y), Theme.Text);
-            y += 34;
-            foreach (string line in header.Skip(1))
+            using (DrawingContext g = bmp.CreateDrawingContext())
             {
-                TextRenderer.DrawText(g, line, body, new Point(24, y), Theme.Muted);
-                y += 24;
+                g.FillRectangle(AppTheme.Card, new Rect(0, 0, w, h));
+                double y = 18;
+                g.DrawText(Text(header.Count > 0 ? header[0] : "ADBora", 20, AppTheme.Text, FontWeight.SemiBold), new Point(24, y));
+                y += 36;
+                foreach (string line in header.Skip(1))
+                {
+                    g.DrawText(Text(line, 15, AppTheme.Muted), new Point(24, y));
+                    y += 24;
+                }
+                Draw(g, new Rect(16, y + 10, w - 32, h - y - 40), 1.6, 15);
+                FormattedText footer = Text("ADBora " + AppInfo.Version + " · github.com/urscaviezel/ADBora", 14, AppTheme.DisabledText);
+                g.DrawText(footer, new Point(w - 20 - footer.Width, h - 26));
             }
-            Font old = Font;
-            Font = body;
-            Draw(g, new Rectangle(16, y + 10, w - 32, h - y - 30), k);
-            Font = old;
-            TextRenderer.DrawText(g, "ADBora " + AppInfo.Version + " · github.com/urscaviezel/ADBora", body, new Rectangle(0, h - 26, w - 20, 22), Theme.DisabledText, TextFormatFlags.Right);
-            bmp.Save(png, System.Drawing.Imaging.ImageFormat.Png);
+#pragma warning disable CS0618 // PNG with default options
+            bmp.Save(png);
+#pragma warning restore CS0618
         }
 
         RateSample[] samples;

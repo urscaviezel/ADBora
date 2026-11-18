@@ -11,12 +11,13 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-string src = args.Length > 0 ? args[0] : "src/AdbTool";
+string src = args.Length > 0 ? args[0] : "src";   // ADBora.Core + ADBora.App
 string output = args.Length > 1 ? args[1] : "lang/template.json";
 string version = args.Length > 2 ? args[2] : "";
 
 var trees = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
     .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+    .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}AdbTool{Path.DirectorySeparatorChar}"))   // old WinForms project (reference only)
     .Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), path: f, options: new CSharpParseOptions(LanguageVersion.Latest)))
     .ToList();
 

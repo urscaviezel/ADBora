@@ -1,5 +1,26 @@
 # Changelog
 
+## Unveröffentlicht / Unreleased
+
+- DE: **ADBora läuft jetzt auch unter Linux.** Neue gemeinsame Codebasis für Windows und Linux: .NET 10, Oberfläche mit
+  Avalonia UI (bisheriger Look), Grafik mit SkiaSharp. Linux-Paket `ADBora-<Version>-Linux-x64.tar.gz` (eigenständig,
+  ohne .NET-Installation) mit `install-desktop.sh` für das Anwendungsmenü; automatische Updates auch unter Linux.
+- DE: Linux: ADB- und scrcpy-Suche in den üblichen Pfaden, Headset-Casting mit den FFmpeg-Bibliotheken des Systems und
+  Ton über PulseAudio/PipeWire, Speedtest erkennt USB-Netzwerkadapter über sysfs, „Gerät im Dateimanager öffnen“ über
+  MTP (Dolphin `mtp:/`, GNOME gvfs), Benutzerordner wird als `~` ausgeblendet.
+- DE: Backups enthalten zusätzlich ein **`INSTALL.sh`** (Wiederherstellung unter Linux/macOS).
+- DE: PFD-Metrics wird direkt per ADB installiert (ohne PowerShell-Konsolenfenster, auch unter Linux).
+- DE: Ein zweiter Start bringt das laufende ADBora-Fenster nach vorne (Windows und Linux).
+- EN: **ADBora now also runs on Linux.** New shared code base for Windows and Linux: .NET 10, UI with Avalonia UI
+  (same look as before), graphics with SkiaSharp. Linux package `ADBora-<version>-Linux-x64.tar.gz` (self-contained,
+  no .NET installation needed) with `install-desktop.sh` for the application menu; automatic updates on Linux too.
+- EN: Linux: ADB and scrcpy are found in the usual paths, headset casting uses the system's FFmpeg libraries and plays
+  audio via PulseAudio/PipeWire, the speed test detects USB network adapters via sysfs, "Open device in file manager"
+  uses MTP (Dolphin `mtp:/`, GNOME gvfs), the user folder is hidden as `~`.
+- EN: Backups additionally contain an **`INSTALL.sh`** (restore on Linux/macOS).
+- EN: PFD-Metrics is installed directly via ADB (no PowerShell console window, on Linux too).
+- EN: A second start brings the running ADBora window to the front (Windows and Linux).
+
 ## v1.6.0 – 2026-11-18
 
 - DE: Stream: **Headset-Casting für PICO** (z. B. Pico 4 Ultra) – entzerrtes Einzelauge 1920 × 1080 über die Begleit-App

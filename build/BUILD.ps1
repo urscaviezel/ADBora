@@ -6,7 +6,7 @@ param([switch]$NoPause)
 # Requirements (build PC only): .NET 8 SDK, optional Inno Setup 6.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $root "src\AdbTool\AdbTool.csproj"
+$project = Join-Path $root "src\ADBora.App\ADBora.App.csproj"
 $distRoot = Join-Path $root "dist"
 $publish = Join-Path $distRoot "publish"
 $portable = Join-Path $distRoot "ADBora-Portable"

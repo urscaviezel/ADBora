@@ -1,6 +1,6 @@
 # Builds the companion app "ADBora Mic" (companion\mic) without Gradle:
 # aapt2 (manifest) + javac + d8 + zipalign + apksigner.
-# Output: src\AdbTool\Resources\ADBoraMic.apk (embedded in ADBora).
+# Output: src\ADBora.Core\Resources\ADBoraMic.apk (embedded in ADBora).
 # Signing key: build\keys\companion.jks (not in the repository; created on first run).
 param([string]$Sdk = "C:\AI-Projects\SDKs\android-sdk", [int]$VersionCode = 6, [string]$VersionName = "1.5")
 $ErrorActionPreference = "Stop"
@@ -9,7 +9,7 @@ $src = Join-Path $root "companion\mic"
 $tools = Join-Path $Sdk "build-tools\34.0.0"
 $androidJar = Join-Path $Sdk "platforms\android-34\android.jar"
 $work = Join-Path $root "build\companion-work"
-$outApk = Join-Path $root "src\AdbTool\Resources\ADBoraMic.apk"
+$outApk = Join-Path $root "src\ADBora.Core\Resources\ADBoraMic.apk"
 $jdk = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME "bin" } else { Split-Path (Get-Command javac).Source }
 
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }

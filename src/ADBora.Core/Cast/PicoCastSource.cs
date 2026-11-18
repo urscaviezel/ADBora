@@ -30,8 +30,8 @@ internal sealed class PicoCastSource : CastSource
     public int Width { get; set; } = 1920;
     public int Height { get; set; } = 1080;
     public int Bitrate { get; set; } = 16_000_000;
-    /// <summary>Folder with scrcpy-server (game audio); null = no audio.</summary>
-    public string? ScrcpyFolder { get; set; }
+    /// <summary>The scrcpy program (its scrcpy-server is used for the game audio); null = no audio.</summary>
+    public string? ScrcpyExe { get; set; }
     private Process? _audioProc;
     private TcpClient? _audioClient;
     private int _audioPort;
@@ -115,13 +115,12 @@ internal sealed class PicoCastSource : CastSource
 
     private async Task StartAudioAsync()
     {
-        string? folder = ScrcpyFolder;
-        string server = folder is null ? "" : Path.Combine(folder, "scrcpy-server");
-        if (!File.Exists(server)) throw new FileNotFoundException("scrcpy-server");
-        string version = Regex.Match(folder!, @"v(\d+\.\d+(?:\.\d+)?)").Groups[1].Value;
+        string? exe = ScrcpyExe;
+        string server = (exe is null ? null : ScrcpyTool.ServerFor(exe)) ?? throw new FileNotFoundException("scrcpy-server");
+        string version = Regex.Match(Path.GetDirectoryName(exe!) ?? "", @"v(\d+\.\d+(?:\.\d+)?)").Groups[1].Value;
         if (version.Length == 0)
         {
-            AdbResult v = await new AdbClient(Path.Combine(folder!, "scrcpy.exe")).CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "--version");
+            AdbResult v = await new AdbClient(exe!).CaptureAsync(CancellationToken.None, TimeSpan.FromSeconds(10), "--version");
             version = Regex.Match(v.Output, @"scrcpy (\d+\.\d+(?:\.\d+)?)").Groups[1].Value;
         }
         if (version.Length == 0) throw new InvalidOperationException("scrcpy version");

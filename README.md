@@ -8,7 +8,7 @@
 
 ## Deutsch
 
-**ADBora** ist eine native Windows-Anwendung (.NET 8 WinForms, dunkles Theme), die das
+**ADBora** ist eine Desktop-Anwendung für **Windows und Linux** (.NET 10, Avalonia UI, dunkles Theme), die das
 **APK Backup Tool** und den **ADB USB Speed Test** in einem Programm vereint –
 ergänzt um APK-Installation, WLAN-ADB und eine ADB-Konsole mit gespeicherten Befehlen.
 Oberfläche umschaltbar zwischen Deutsch und Englisch. Kein Python und keine
@@ -20,6 +20,14 @@ separate .NET-Laufzeit nötig (self-contained).
 |---|---|---|
 | **Portabel** | `ADBora-Portable-<Version>-Windows-x64.zip` entpacken, `ADBora.exe` starten | Ordner `Data` neben der EXE (erkennbar an `portable.flag`) – nichts wird ausserhalb des Ordners gespeichert |
 | **Installer** | `ADBora-Setup-<Version>.exe` | `%LOCALAPPDATA%\ADBora`; Startmenü-Eintrag, optional Desktop-Symbol, sauberer Deinstaller unter „Apps“ |
+| **Linux** | `ADBora-<Version>-Linux-x64.tar.gz` entpacken, `ADBora/ADBora` starten; `ADBora/install-desktop.sh` legt einen Eintrag im Anwendungsmenü an | `~/.local/share/ADBora` |
+
+**Linux:** ADB und – für den scrcpy-Modus – scrcpy am besten über die Paketverwaltung installieren
+(z. B. `sudo pacman -S android-tools scrcpy` bzw. `sudo apt install adb scrcpy`). Das Headset-Casting nutzt die
+FFmpeg-Bibliotheken des Systems (Paket `ffmpeg`), der Ton läuft über PulseAudio/PipeWire. Erscheint ein Gerät als
+„no permissions“, fehlen die udev-Regeln für Android (Paket `android-udev` bzw. `android-sdk-platform-tools-common`).
+„Gerät im Dateimanager öffnen“ nutzt MTP (`mtp:/` in Dolphin, gvfs unter GNOME). Backups enthalten neben
+`INSTALL.cmd` auch ein `INSTALL.sh`.
 
 Der Installer kann ohne Administratorrechte (nur für den aktuellen Benutzer)
 oder für alle Benutzer installieren. Beim **Deinstallieren** wird gefragt, ob
@@ -49,7 +57,8 @@ Vorgangs (z. B. Backup) geschlossen, fragt es vorher nach.
 
 ADB ist nicht enthalten. Gesucht wird in: gespeicherter Pfad, `adb\adb.exe` bzw.
 `platform-tools\adb.exe` neben der EXE, `PATH`, `ANDROID_SDK_ROOT` / `ANDROID_HOME`,
-`%LOCALAPPDATA%\Android\Sdk\platform-tools`, `C:\Android\platform-tools`.
+`%LOCALAPPDATA%\Android\Sdk\platform-tools`, `C:\Android\platform-tools`;
+unter Linux `~/Android/Sdk/platform-tools`, `~/platform-tools`, `/opt/android-sdk/platform-tools`, `/usr/bin/adb`.
 Fehlt ADB, öffnet sich die Einrichtungshilfe.
 Download: https://developer.android.com/tools/releases/platform-tools
 
@@ -175,13 +184,14 @@ Handy-App oder Meta-Konto:
 - Aufnahme als **MKV** mit Ton und Mikrofon (`Videos\ADBora`), Screenshot (`Bilder\Screenshots`).
 - Stream-Fenster: Doppelklick/F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot,
   M = Ton ein/aus, + / − = Lautstärke.
-- Dekodiert wird mit den FFmpeg-Bibliotheken (LGPL) aus dem scrcpy-Paket.
+- Dekodiert wird mit den FFmpeg-Bibliotheken (LGPL) – unter Windows aus dem scrcpy-Paket,
+  unter Linux die des Systems.
 
 **scrcpy (alle Android-Geräte)**
 
 - Nutzt **scrcpy** (Open Source, Apache-2.0); wird beim ersten Mal per Knopfdruck von GitHub
   geladen (`%LOCALAPPDATA%\ADBora\tools` bzw. `Data\tools`), keine App auf dem Headset nötig.
-  Auch das Headset-Casting braucht scrcpy (wegen FFmpeg).
+  Unter Windows braucht auch das Headset-Casting scrcpy (wegen FFmpeg); unter Linux nur PICO (Ton).
 - Das Bild ist das **rohe Display**: bei der Quest beide Augen nebeneinander und
   schief eingebaut, bei der Play For Dream ein 2 × 2-Raster auf einem eigenen Display.
   ADBora wählt passendes Display, Ausschnitt und Drehung automatisch; mit **Grösse,
@@ -243,11 +253,13 @@ zeigt, ob eine Datei vollständig und technisch korrekt ist.
 
 ### Build
 
-Voraussetzung (nur Build-PC): .NET 8 SDK, für den Installer zusätzlich
-[Inno Setup 6](https://jrsoftware.org/isdl.php).
+Voraussetzung (nur Build-PC): .NET 10 SDK, für den Windows-Installer zusätzlich
+[Inno Setup 6](https://jrsoftware.org/isdl.php). Aufbau: `src/ADBora.Core` (Logik, plattformneutral)
+und `src/ADBora.App` (Avalonia-Oberfläche) – eine Codebasis für Windows und Linux.
 
 ```text
-build\BUILD.cmd
+build\BUILD.cmd              (Windows)
+build/build-linux.sh         (Linux → dist/ADBora-<Version>-Linux-x64.tar.gz)
 ```
 
 Ergebnis in `dist\`: `ADBora-Portable\`, `ADBora-Portable-<Version>-Windows-x64.zip`
@@ -269,7 +281,7 @@ GitHub geladen. Erstellt von
 
 ## English
 
-**ADBora** is a native Windows application (.NET 8 WinForms, dark theme) that combines the
+**ADBora** is a desktop application for **Windows and Linux** (.NET 10, Avalonia UI, dark theme) that combines the
 **APK Backup Tool** and the **ADB USB Speed Test** in one program – extended with
 APK installation, Wi-Fi ADB and an ADB console with saved commands. The UI can
 be switched between German and English. No Python and no separate .NET runtime
@@ -281,6 +293,14 @@ required (self-contained).
 |---|---|---|
 | **Portable** | extract `ADBora-Portable-<version>-Windows-x64.zip`, run `ADBora.exe` | `Data` folder next to the EXE (marked by `portable.flag`) – nothing is stored outside the folder |
 | **Installer** | `ADBora-Setup-<version>.exe` | `%LOCALAPPDATA%\ADBora`; Start menu entry, optional desktop icon, clean uninstaller in "Apps" |
+| **Linux** | extract `ADBora-<version>-Linux-x64.tar.gz`, run `ADBora/ADBora`; `ADBora/install-desktop.sh` adds an application menu entry | `~/.local/share/ADBora` |
+
+**Linux:** best install ADB and – for the scrcpy mode – scrcpy with the package manager
+(e.g. `sudo pacman -S android-tools scrcpy` or `sudo apt install adb scrcpy`). Headset casting uses the system's
+FFmpeg libraries (package `ffmpeg`), audio plays via PulseAudio/PipeWire. If a device shows up as "no permissions",
+the Android udev rules are missing (package `android-udev` or `android-sdk-platform-tools-common`).
+"Open device in file manager" uses MTP (`mtp:/` in Dolphin, gvfs on GNOME). Backups contain an `INSTALL.sh`
+next to `INSTALL.cmd`.
 
 The installer can install without administrator rights (current user only) or
 for all users. When **uninstalling**, you are asked whether the user data
@@ -310,7 +330,8 @@ it asks first.
 
 ADB is not included. Search order: saved path, `adb\adb.exe` or
 `platform-tools\adb.exe` next to the EXE, `PATH`, `ANDROID_SDK_ROOT` / `ANDROID_HOME`,
-`%LOCALAPPDATA%\Android\Sdk\platform-tools`, `C:\Android\platform-tools`.
+`%LOCALAPPDATA%\Android\Sdk\platform-tools`, `C:\Android\platform-tools`;
+on Linux `~/Android/Sdk/platform-tools`, `~/platform-tools`, `/opt/android-sdk/platform-tools`, `/usr/bin/adb`.
 If ADB is missing, the setup help opens.
 Download: https://developer.android.com/tools/releases/platform-tools
 
@@ -422,13 +443,14 @@ Meta account:
 - **MKV** recording with audio and microphone (`Videos\ADBora`), screenshot (`Pictures\Screenshots`).
 - Stream window: double-click/F11 = full screen, Esc = leave full screen, F12 = screenshot,
   M = audio on/off, + / − = volume.
-- Decoding uses the FFmpeg libraries (LGPL) from the scrcpy package.
+- Decoding uses the FFmpeg libraries (LGPL) – on Windows from the scrcpy package, on Linux
+  the system's.
 
 **scrcpy (all Android devices)**
 
 - Uses **scrcpy** (open source, Apache-2.0); downloaded from GitHub with one click the first
   time (`%LOCALAPPDATA%\ADBora\tools` or `Data\tools`), no app needed on the headset.
-  Headset casting needs scrcpy too (for FFmpeg).
+  On Windows headset casting needs scrcpy too (for FFmpeg); on Linux only the PICO (audio).
 - The picture is the **raw display**: on the Quest both eyes side by side and mounted
   tilted, on the Play For Dream a 2 × 2 grid on a separate display. ADBora picks display,
   view and rotation automatically; **size, offset and tilt** fine-tune it (remembered per
@@ -490,11 +512,13 @@ shows whether a file is complete and technically correct.
 
 ### Build
 
-Requirements (build PC only): .NET 8 SDK, for the installer additionally
-[Inno Setup 6](https://jrsoftware.org/isdl.php).
+Requirements (build PC only): .NET 10 SDK, for the Windows installer additionally
+[Inno Setup 6](https://jrsoftware.org/isdl.php). Structure: `src/ADBora.Core` (logic, platform neutral)
+and `src/ADBora.App` (Avalonia UI) – one code base for Windows and Linux.
 
 ```text
-build\BUILD.cmd
+build\BUILD.cmd              (Windows)
+build/build-linux.sh         (Linux → dist/ADBora-<version>-Linux-x64.tar.gz)
 ```
 
 Output in `dist\`: `ADBora-Portable\`, `ADBora-Portable-<version>-Windows-x64.zip`

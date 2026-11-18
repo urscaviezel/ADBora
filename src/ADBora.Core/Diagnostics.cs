@@ -141,7 +141,7 @@ internal static class Diagnostics
             decoder.FrameDecoded += b => { frames++; SKBitmap? old = Interlocked.Exchange(ref last, b); old?.Dispose(); };
             var source = Cast.CastSource.Create(kind == "pfd" ? Cast.CastKind.PlayForDream : kind == "pico" ? Cast.CastKind.Pico : Cast.CastKind.Quest, adb, serial);
             source.Log += L;
-            if (source is Cast.PicoCastSource pico) pico.ScrcpyFolder = Path.GetDirectoryName(scrcpy);
+            if (source is Cast.PicoCastSource pico && scrcpy.Length > 0) pico.ScrcpyExe = scrcpy;
             source.WantAudio = true;
             int aac = 0, pcm = 0;
             using var player = (Cast.AudioPlayer?)null;

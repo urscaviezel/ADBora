@@ -26,10 +26,12 @@ internal sealed class CastSession
     private AudioPlayer? _player;
     private bool _audioFailed;
 
-    public CastSession(CastKind kind, string adbPath, string serial, string ffmpegFolder)
+    /// <param name="scrcpyExe">scrcpy program: Windows = its folder has the FFmpeg DLLs; PICO game audio uses its scrcpy-server. Linux: FFmpeg comes from the system.</param>
+    public CastSession(CastKind kind, string adbPath, string serial, string? scrcpyExe)
     {
         _source = CastSource.Create(kind, adbPath, serial);
-        if (_source is PicoCastSource pico) pico.ScrcpyFolder = ffmpegFolder; // game audio via scrcpy-server
+        if (_source is PicoCastSource pico) pico.ScrcpyExe = scrcpyExe; // game audio via scrcpy-server
+        string ffmpegFolder = scrcpyExe is null ? "" : Path.GetDirectoryName(scrcpyExe) ?? "";
         _adbPath = adbPath;
         _serial = serial;
         _ffmpegFolder = ffmpegFolder;
@@ -82,7 +84,9 @@ internal sealed class CastSession
             }
         };
         if (!H264Decoder.TryLoad(_ffmpegFolder, out string error))
-            throw new InvalidOperationException(Loc.T("FFmpeg-Bibliotheken aus dem scrcpy-Paket konnten nicht geladen werden: ", "FFmpeg libraries from the scrcpy package could not be loaded: ") + error);
+            throw new InvalidOperationException(Platform.IsWindows
+                ? Loc.T("FFmpeg-Bibliotheken aus dem scrcpy-Paket konnten nicht geladen werden: ", "FFmpeg libraries from the scrcpy package could not be loaded: ") + error
+                : Loc.T("FFmpeg-Bibliotheken (libavcodec) des Systems konnten nicht geladen werden – bitte das Paket „ffmpeg“ installieren: ", "The system's FFmpeg libraries (libavcodec) could not be loaded – please install the \"ffmpeg\" package: ") + error);
         _decoder = new H264Decoder();
         _viewer = viewer;
         _viewer.Recycle += b => _decoder?.Recycle(b);

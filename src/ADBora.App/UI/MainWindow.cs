@@ -62,6 +62,12 @@ internal sealed class MainWindow : Window
         };
 
         Opened += async (_, _) => await OnFirstShownAsync();
+        if (!smokeTest)
+            SingleInstance.Listen(() => Dispatcher.UIThread.Post(() =>
+            {
+                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                Activate();
+            }));
         Closing += OnClosing;
     }
 
@@ -129,9 +135,9 @@ internal sealed class MainWindow : Window
         _pages.Add(new SettingsPage(_state));
         _pages.Add(new BackupPage(_state));
         _pages.Add(new InstallPage(_state));
-        _pages.Add(new PendingPage("Speedtest", "Speed test"));
-        _pages.Add(new PendingPage("Stream (Beta)", "Stream (beta)"));
-        _pages.Add(new PendingPage("Performance", "Performance"));
+        _pages.Add(new SpeedTestPage(_state));
+        _pages.Add(new StreamPage(_state));
+        _pages.Add(new PerformancePage(_state));
         _pages.Add(new CommandsPage(_state));
         _pages.Add(new InfoPage(_state, ExitForUpdate));
         foreach (Control page in _pages)
@@ -298,6 +304,8 @@ internal sealed class MainWindow : Window
         }
 
         _poll.Stop();
+        foreach (StreamPage stream in _pages.OfType<StreamPage>())
+            stream.Shutdown();
         _state.Settings.WindowMaximized = WindowState == WindowState.Maximized;
         if (WindowState == WindowState.Normal)
         {
@@ -311,21 +319,5 @@ internal sealed class MainWindow : Window
         {
             try { adb.KillServerAsync().Wait(TimeSpan.FromSeconds(5)); } catch { }
         }
-    }
-}
-
-/// <summary>Placeholder for tabs that are not ported to Avalonia yet.</summary>
-internal sealed class PendingPage : Border
-{
-    public PendingPage(string de, string en)
-    {
-        Padding = new Thickness(20, 16);
-        var title = Ui.Label(de, en);
-        title.Classes.Add("section");
-        var card = new Card();
-        card.SetContent(title);
-        card.SetContent(Ui.Label("Dieser Tab wird gerade auf Avalonia portiert.", "This tab is being ported to Avalonia.", muted: true));
-        card.VerticalAlignment = VerticalAlignment.Top;
-        Child = card;
     }
 }

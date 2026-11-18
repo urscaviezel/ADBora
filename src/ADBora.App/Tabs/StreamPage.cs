@@ -1,5 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
+using SkiaSharp;
 using AdbTool.Backup;
 using AdbTool.Cast;
 using AdbTool.Core;
@@ -13,7 +19,7 @@ namespace AdbTool.Tabs;
 /// the raw display of any Android device (separate scrcpy window) with view, crop,
 /// recording, screenshot and audio/microphone forwarding.
 /// </summary>
-internal sealed class StreamPage : UserControl, IPage
+internal sealed class StreamPage : ScrollViewer, IPage
 {
     private static readonly (string De, string En, int Size, int Mbit)[] Qualities =
     {
@@ -25,9 +31,9 @@ internal sealed class StreamPage : UserControl, IPage
     private static readonly int[] FpsValues = { 30, 60, 72, 90 };
 
     private readonly AppState _state;
-    private readonly Label _scrcpyStatus = Ui.Value("");
-    private readonly DarkButton _download = Ui.Button("scrcpy herunterladen", "Download scrcpy", ButtonKind.Primary);
-    private readonly DarkButton _choose = Ui.Button("scrcpy.exe auswählen …", "Choose scrcpy.exe …");
+    private readonly TextBlock _scrcpyStatus = Ui.Value("");
+    private readonly Button _download = Ui.Button("scrcpy herunterladen", "Download scrcpy", ButtonKind.Primary);
+    private readonly Button _choose = Ui.Button($"{Platform.Exe("scrcpy")} auswählen …", $"Choose {Platform.Exe("scrcpy")} …");
 
     private static readonly (string De, string En)[] Views =
     {
@@ -36,61 +42,61 @@ internal sealed class StreamPage : UserControl, IPage
         ("Oben links (Viertel)", "Top left (quarter)"),
         ("Unten links (Viertel)", "Bottom left (quarter)"),
     };
-    private readonly DarkComboBox _view = Ui.Combo(260);
-    private readonly DarkComboBox _rotation = Ui.Combo(120);
+    private readonly ComboBox _view = Ui.Combo(260);
+    private readonly ComboBox _rotation = Ui.Combo(120);
     private static readonly int[] ZoomValues = Enumerable.Range(0, 13).Select(i => 100 - i * 5).ToArray();       // 100 … 40 %
     private static readonly int[] OffsetValues = Enumerable.Range(-15, 31).Select(i => i * 2).ToArray();         // -30 … 30 %
     private static readonly double[] AngleValues = Enumerable.Range(-60, 121).Select(i => i * 0.5).ToArray();    // -30 … 30°
-    private readonly DarkComboBox _zoom = Ui.Combo(100);
-    private readonly DarkComboBox _offX = Ui.Combo(100);
-    private readonly DarkComboBox _offY = Ui.Combo(100);
-    private readonly DarkComboBox _angle = Ui.Combo(100);
-    private readonly DarkButton _resetFine = Ui.Button("Zurücksetzen", "Reset");
+    private readonly ComboBox _zoom = Ui.Combo(100);
+    private readonly ComboBox _offX = Ui.Combo(100);
+    private readonly ComboBox _offY = Ui.Combo(100);
+    private readonly ComboBox _angle = Ui.Combo(100);
+    private readonly Button _resetFine = Ui.Button("Zurücksetzen", "Reset");
     private string? _timeoutSerial;
     private string? _timeoutOld;
-    private readonly Label _viewHint = Ui.Label("", "", muted: true);
-    private readonly DarkComboBox _displayCombo = Ui.Combo(360);
-    private readonly DarkButton _listDisplays = Ui.Button("Neu lesen", "Reload");
+    private readonly TextBlock _viewHint = Ui.Value("");
+    private readonly ComboBox _displayCombo = Ui.Combo(360);
+    private readonly Button _listDisplays = Ui.Button("Neu lesen", "Reload");
     private readonly List<(int Id, int W, int H, string Name)> _displays = new();
-    private readonly DarkComboBox _quality = Ui.Combo(260);
-    private readonly DarkComboBox _fps = Ui.Combo(120);
-    private readonly DarkComboBox _audio = Ui.Combo(260);
+    private readonly ComboBox _quality = Ui.Combo(260);
+    private readonly ComboBox _fps = Ui.Combo(120);
+    private readonly ComboBox _audio = Ui.Combo(260);
     private readonly CheckBox _control = Ui.CheckBox("Mit Maus und Tastatur steuern", "Control with mouse and keyboard");
     private readonly CheckBox _onTop = Ui.CheckBox("Stream-Fenster immer im Vordergrund", "Stream window always on top");
     private readonly CheckBox _proximity = Ui.CheckBox("Näherungssensor während des Streams aus (Quest)", "Proximity sensor off while streaming (Quest)");
     private readonly CheckBox _record = Ui.CheckBox("Stream als Video aufnehmen (MP4)", "Record the stream as video (MP4)");
-    private readonly TextBox _folder = Ui.TextBox(420);
-    private readonly DarkButton _browse = Ui.Button("Ordner wählen …", "Choose folder …");
-    private readonly TextBox _shotFolder = Ui.TextBox(420);
-    private readonly DarkButton _shotBrowse = Ui.Button("Ordner wählen …", "Choose folder …");
+    private readonly TextBox _folder = new() { Margin = new Thickness(0, 4, 8, 4), MinWidth = 200 };
+    private readonly Button _browse = Ui.Button("Ordner wählen …", "Choose folder …");
+    private readonly TextBox _shotFolder = new() { Margin = new Thickness(0, 4, 8, 4), MinWidth = 200 };
+    private readonly Button _shotBrowse = Ui.Button("Ordner wählen …", "Choose folder …");
 
-    private readonly DarkButton _start = Ui.Button("Stream starten", "Start stream", ButtonKind.Primary);
-    private readonly DarkButton _stop = Ui.Button("Stream beenden", "Stop stream", ButtonKind.Danger);
-    private readonly DarkButton _screenshot = Ui.Button("Screenshot", "Screenshot");
-    private readonly DarkButton _openFolder = Ui.Button("Videos öffnen", "Open videos");
-    private readonly DarkButton _openShots = Ui.Button("Screenshots öffnen", "Open screenshots");
-    private readonly DarkProgressBar _progress = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 26, Margin = new Padding(8, 4, 0, 4), Visible = false, Maximum = 1000 };
-    private readonly Label _status = Ui.Value("");
+    private readonly Button _start = Ui.Button("Stream starten", "Start stream", ButtonKind.Primary);
+    private readonly Button _stop = Ui.Button("Stream beenden", "Stop stream", ButtonKind.Danger);
+    private readonly Button _screenshot = Ui.Button("Screenshot", "Screenshot");
+    private readonly Button _openFolder = Ui.Button("Videos öffnen", "Open videos");
+    private readonly Button _openShots = Ui.Button("Screenshots öffnen", "Open screenshots");
+    private readonly ProgressBar _progress = new() { Height = 8, Margin = new Thickness(8, 0, 0, 0), IsVisible = false, Maximum = 1000, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _status = Ui.Value("");
     private readonly TextBox _log = Ui.Console();
 
     // --- mode / headset casting
     private readonly RadioButton _modeCast = Ui.Radio("Headset-Casting (Meta Quest, Play For Dream, PICO)", "Headset casting (Meta Quest, Play For Dream, PICO)");
     private readonly RadioButton _modeScrcpy = Ui.Radio("scrcpy (alle Android-Geräte)", "scrcpy (all Android devices)");
-    private readonly Label _modeHint = Ui.Label("", "", muted: true);
+    private readonly TextBlock _modeHint = Ui.Label("", "", muted: true);
     private readonly RadioButton _hmdQuest = Ui.Radio("Meta Quest", "Meta Quest");
     private readonly RadioButton _hmdPfd = Ui.Radio("Play For Dream MR", "Play For Dream MR");
     private readonly RadioButton _hmdPico = Ui.Radio("PICO", "PICO");
-    private readonly Label _castInfo = Ui.Label("", "", muted: true);
+    private readonly TextBlock _castInfo = Ui.Label("", "", muted: true);
     private readonly CheckBox _castProximity = Ui.CheckBox("Headset während des Streams wach halten", "Keep the headset awake while streaming");
     private readonly CheckBox _castAudio = Ui.CheckBox("Ton des Headsets am PC abspielen", "Play the headset audio on the PC");
     private static readonly int[] VolumeValues = Enumerable.Range(0, 21).Select(i => i * 10).ToArray(); // 0 … 200 %
-    private readonly DarkComboBox _castVolume = Ui.Combo(100);
+    private readonly ComboBox _castVolume = Ui.Combo(100);
     private bool _volumeLoading;
     private readonly CheckBox _castMic = Ui.CheckBox("Mikrofon des Headsets einbeziehen", "Include the headset microphone");
     private readonly CheckBox _castOnTop = Ui.CheckBox("Stream-Fenster immer im Vordergrund", "Stream window always on top");
     private readonly CheckBox _castRecord = Ui.CheckBox("Stream mit Ton aufnehmen (MKV)", "Record the stream with audio (MKV)");
-    private Card _optCard = null!, _castCard = null!;
-    private Label _beta = null!, _toolHint = null!;
+    private Card _optCard = null!, _castCard = null!, _toolCard = null!;
+    private TextBlock _beta = null!;
     private CastSession? _cast;
     private CastKind _detected = CastKind.None;
     private string? _detectedSerial;
@@ -104,131 +110,128 @@ internal sealed class StreamPage : UserControl, IPage
     private string? _displaySerial;
     private bool _downloading;
 
+    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
+
     public StreamPage(AppState state)
     {
         _state = state;
-        BackColor = Theme.Background;
-        DoubleBuffered = true;
-        AutoScroll = true;
-        Padding = new Padding(20, 16, 20, 16);
-        BuildUi();
-
+        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
         _scrcpy = ScrcpyTool.Find(_state.Settings.ScrcpyPath);
+        BuildUi();
         _ = ShowScrcpyAsync();
 
         _state.SelectedDeviceChanged += () => { _displaySerial = null; UpdateEnabled(); _ = DetectDisplayAsync(); _ = DetectCastAsync(); };
         _state.AdbChanged += UpdateEnabled;
         _state.BusyChanged += UpdateEnabled;
         Loc.LanguageChanged += () => { FillCombos(); ApplyMode(); _ = ShowScrcpyAsync(); };
-        HandleDestroyed += (_, _) =>
-        {
-            StopStream(wait: false);
-            _ = _cast?.StopAsync();
-            // App is closing: restore the display timeout synchronously
-            if (_timeoutOld is { } old && _timeoutSerial is not null && _state.HasAdb)
-            {
-                _timeoutOld = null;
-                try
-                {
-                    using Process p = new AdbClient(_state.AdbPath!, _timeoutSerial).Start("shell", $"settings put system screen_off_timeout {old}");
-                    p.WaitForExit(3000);
-                }
-                catch { }
-            }
-        };
         UpdateEnabled();
+    }
+
+    /// <summary>App is closing: stop the stream and restore the display timeout synchronously.</summary>
+    public void Shutdown()
+    {
+        StopStream(wait: false);
+        _ = _cast?.StopAsync();
+        if (_timeoutOld is { } old && _timeoutSerial is not null && _state.HasAdb)
+        {
+            _timeoutOld = null;
+            try
+            {
+                using Process p = new AdbClient(_state.AdbPath!, _timeoutSerial).Start("shell", $"settings put system screen_off_timeout {old}");
+                p.WaitForExit(3000);
+            }
+            catch { }
+        }
     }
 
     private void BuildUi()
     {
         // --- scrcpy -------------------------------------------------------------
-        var toolCard = new Card("scrcpy", "scrcpy") { Dock = DockStyle.Top };
-        var toolBox = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Top };
-        toolBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var toolHint = _toolHint = Ui.Label(
-            "Das Streaming nutzt scrcpy (Open Source, Apache-2.0); das Headset-Casting verwendet die darin enthaltenen FFmpeg-Bibliotheken zum Dekodieren. Es braucht keine App auf dem Headset und läuft über USB oder WLAN-ADB. scrcpy wird nicht mitgeliefert, sondern einmalig von GitHub geladen.",
-            "Streaming uses scrcpy (open source, Apache-2.0); headset casting uses the FFmpeg libraries included with it for decoding. It needs no app on the headset and works via USB or Wi-Fi ADB. scrcpy is not bundled but downloaded once from GitHub.", muted: true);
-        toolHint.Margin = new Padding(0, 0, 0, 6);
-        Ui.WrapTo(toolHint, this, 40);
-        Ui.WrapTo(_scrcpyStatus, this, 40);
+        _toolCard = new Card("scrcpy", "scrcpy");
+        var toolHint = Platform.IsWindows
+            ? Ui.Label(
+                "Das Streaming nutzt scrcpy (Open Source, Apache-2.0); das Headset-Casting verwendet die darin enthaltenen FFmpeg-Bibliotheken zum Dekodieren. Es braucht keine App auf dem Headset und läuft über USB oder WLAN-ADB. scrcpy wird nicht mitgeliefert, sondern einmalig von GitHub geladen.",
+                "Streaming uses scrcpy (open source, Apache-2.0); headset casting uses the FFmpeg libraries included with it for decoding. It needs no app on the headset and works via USB or Wi-Fi ADB. scrcpy is not bundled but downloaded once from GitHub.", muted: true)
+            : Ui.Label(
+                "Der scrcpy-Modus nutzt scrcpy (Open Source, Apache-2.0) – am besten über die Paketverwaltung installieren (z. B. „sudo pacman -S scrcpy“), sonst lädt ADBora das Linux-Paket von GitHub. Das Headset-Casting braucht unter Linux kein scrcpy, sondern die FFmpeg-Bibliotheken des Systems (Paket „ffmpeg“); nur bei PICO kommt der Ton über scrcpy.",
+                "The scrcpy mode uses scrcpy (open source, Apache-2.0) – best installed with the package manager (e.g. \"sudo pacman -S scrcpy\"), otherwise ADBora downloads the Linux package from GitHub. On Linux headset casting does not need scrcpy but the system's FFmpeg libraries (package \"ffmpeg\"); only on the PICO the audio comes via scrcpy.", muted: true);
+        toolHint.Margin = new Thickness(0, 0, 0, 6);
         _download.Click += async (_, _) => await DownloadAsync();
-        _choose.Click += (_, _) => ChooseScrcpy();
+        _choose.Click += async (_, _) => await ChooseScrcpy();
         var beta = _beta = Ui.Label(
             "scrcpy zeigt das rohe Display des Geräts. Bei VR-Headsets ist das Bild je nach Gerät verzerrt, schief oder als Raster – Ausschnitt, Drehung und Feinabstimmung helfen. Für Meta Quest, Play For Dream und PICO gibt es oben das entzerrte „Headset-Casting“.",
             "scrcpy shows the raw display of the device. On VR headsets the picture is distorted, tilted or a grid depending on the device – view, rotation and fine tuning help. For Meta Quest, Play For Dream and PICO use the undistorted \"Headset casting\" above.");
-        beta.ForeColor = Theme.Warning;
-        beta.Margin = new Padding(0, 0, 0, 8);
-        Ui.WrapTo(beta, this, 40);
-        toolBox.Controls.Add(beta);
-        toolBox.Controls.Add(toolHint);
-        toolBox.Controls.Add(_scrcpyStatus);
+        beta.Foreground = AppTheme.Warning;
+        beta.Margin = new Thickness(0, 0, 0, 8);
+        _toolCard.SetContent(beta);
+        _toolCard.SetContent(toolHint);
+        _toolCard.SetContent(_scrcpyStatus);
         var toolRow = Ui.Row(_download, _choose);
-        toolRow.Margin = new Padding(0, 8, 0, 0);
-        toolBox.Controls.Add(toolRow);
-        toolCard.SetContent(toolBox);
+        toolRow.Margin = new Thickness(0, 8, 0, 0);
+        _toolCard.SetContent(toolRow);
 
         // --- options ------------------------------------------------------------
-        var optCard = _optCard = new Card("scrcpy-Einstellungen", "scrcpy settings") { Dock = DockStyle.Top };
+        var optCard = _optCard = new Card("scrcpy-Einstellungen", "scrcpy settings");
         var grid = Ui.Grid(2);
         FillCombos();
         _quality.SelectedIndex = Math.Clamp(_state.Settings.StreamQuality, 0, Qualities.Length - 1);
         _fps.SelectedIndex = Math.Clamp(_state.Settings.StreamFps, 0, FpsValues.Length - 1);
         _audio.SelectedIndex = Math.Clamp(_state.Settings.StreamAudio, 0, 2);
-        _quality.SelectedIndexChanged += (_, _) => { _state.Settings.StreamQuality = _quality.SelectedIndex; _state.Settings.Save(); };
-        _fps.SelectedIndexChanged += (_, _) => { _state.Settings.StreamFps = _fps.SelectedIndex; _state.Settings.Save(); };
-        _audio.SelectedIndexChanged += (_, _) => { _state.Settings.StreamAudio = _audio.SelectedIndex; _state.Settings.Save(); };
+        _quality.SelectionChanged += (_, _) => { if (_quality.SelectedIndex >= 0) { _state.Settings.StreamQuality = _quality.SelectedIndex; _state.Settings.Save(); } };
+        _fps.SelectionChanged += (_, _) => { if (_fps.SelectedIndex >= 0) { _state.Settings.StreamFps = _fps.SelectedIndex; _state.Settings.Save(); } };
+        _audio.SelectionChanged += (_, _) => { if (_audio.SelectedIndex >= 0) { _state.Settings.StreamAudio = _audio.SelectedIndex; _state.Settings.Save(); } };
         _view.SelectedIndex = 0;
-        _view.SelectedIndexChanged += (_, _) => ShowViewHint();
-        _displayCombo.SelectedIndexChanged += (_, _) => ShowViewHint();
-        _viewHint.Margin = new Padding(0, 0, 0, 6);
-        Ui.WrapTo(_viewHint, this, 200);
+        _view.SelectionChanged += (_, _) => ShowViewHint();
+        _displayCombo.SelectionChanged += (_, _) => ShowViewHint();
+        _viewHint.Foreground = AppTheme.Muted;
+        _viewHint.Margin = new Thickness(0, 0, 0, 6);
 
-        _control.Checked = _state.Settings.StreamControl;
-        _onTop.Checked = _state.Settings.StreamOnTop;
-        _record.Checked = _state.Settings.StreamRecord;
-        _proximity.Checked = true;
-        _control.CheckedChanged += (_, _) => { _state.Settings.StreamControl = _control.Checked; _state.Settings.Save(); };
-        _onTop.CheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _onTop.Checked; _state.Settings.Save(); };
-        _record.CheckedChanged += (_, _) => { _state.Settings.StreamRecord = _record.Checked; _state.Settings.Save(); UpdateEnabled(); };
+        _control.IsChecked = _state.Settings.StreamControl;
+        _onTop.IsChecked = _state.Settings.StreamOnTop;
+        _record.IsChecked = _state.Settings.StreamRecord;
+        _proximity.IsChecked = true;
+        _control.IsCheckedChanged += (_, _) => { _state.Settings.StreamControl = _control.IsChecked == true; _state.Settings.Save(); };
+        _onTop.IsCheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _onTop.IsChecked == true; _state.Settings.Save(); };
+        _record.IsCheckedChanged += (_, _) => { _state.Settings.StreamRecord = _record.IsChecked == true; _state.Settings.Save(); UpdateEnabled(); };
         _folder.Text = Privacy.ShowPath(_state.Settings.StreamFolder);
-        _folder.TextChanged += (_, _) => { _state.Settings.StreamFolder = _folder.Text.Trim(); _state.Settings.Save(); };
-        _browse.Click += (_, _) => ChooseFolder(_folder, Loc.T("Zielordner für Videoaufnahmen", "Folder for video recordings"));
+        _folder.TextChanged += (_, _) => { _state.Settings.StreamFolder = (_folder.Text ?? "").Trim(); _state.Settings.Save(); };
+        _browse.Click += async (_, _) => await ChooseFolder(_folder, Loc.T("Zielordner für Videoaufnahmen", "Folder for video recordings"));
         _shotFolder.Text = Privacy.ShowPath(_state.Settings.ScreenshotFolder);
-        Privacy.Changed += () => { _folder.Text = Privacy.ShowPath(_folder.Text.Trim()); _shotFolder.Text = Privacy.ShowPath(_shotFolder.Text.Trim()); };
-        _shotFolder.TextChanged += (_, _) => { _state.Settings.ScreenshotFolder = _shotFolder.Text.Trim(); _state.Settings.Save(); };
-        _shotBrowse.Click += (_, _) => ChooseFolder(_shotFolder, Loc.T("Zielordner für Screenshots", "Folder for screenshots"));
+        Privacy.Changed += () => { _folder.Text = Privacy.ShowPath((_folder.Text ?? "").Trim()); _shotFolder.Text = Privacy.ShowPath((_shotFolder.Text ?? "").Trim()); };
+        _shotFolder.TextChanged += (_, _) => { _state.Settings.ScreenshotFolder = (_shotFolder.Text ?? "").Trim(); _state.Settings.Save(); };
+        _shotBrowse.Click += async (_, _) => await ChooseFolder(_shotFolder, Loc.T("Zielordner für Screenshots", "Folder for screenshots"));
 
-        _displayCombo.Items.Add(Loc.T("Display 0 (Standard)", "Display 0 (default)"));
+        _displayCombo.ItemsSource = new[] { Loc.T("Display 0 (Standard)", "Display 0 (default)") };
         _displayCombo.SelectedIndex = 0;
         _listDisplays.Click += async (_, _) => { _displaySerial = null; await DetectDisplayAsync(); };
         Ui.AddRow(grid, Ui.Label("Display", "Display", muted: true), Ui.Row(_displayCombo, _listDisplays));
-        foreach (string r in new[] { "0°", "90°", "180°", "270°" }) _rotation.Items.Add(r);
+        _rotation.ItemsSource = new[] { "0°", "90°", "180°", "270°" };
         _rotation.SelectedIndex = 0;
         Ui.AddRow(grid, Ui.Label("Ausschnitt", "View", muted: true), _view);
         Ui.AddRow(grid, Ui.Label("Drehung", "Rotation", muted: true), _rotation);
-        foreach (int z in ZoomValues) _zoom.Items.Add($"{z} %");
-        foreach (int o in OffsetValues) { _offX.Items.Add($"{o:+0;-0;0} %"); _offY.Items.Add($"{o:+0;-0;0} %"); }
-        foreach (double a in AngleValues) _angle.Items.Add($"{a:+0.0;-0.0;0.0}°");
+        _zoom.ItemsSource = ZoomValues.Select(z => $"{z} %").ToList();
+        _offX.ItemsSource = OffsetValues.Select(o => $"{o:+0;-0;0} %").ToList();
+        _offY.ItemsSource = OffsetValues.Select(o => $"{o:+0;-0;0} %").ToList();
+        _angle.ItemsSource = AngleValues.Select(a => $"{a:+0.0;-0.0;0.0}°").ToList();
         ResetFine();
-        foreach (DarkComboBox c in new[] { _zoom, _offX, _offY, _angle })
-            c.SelectedIndexChanged += (_, _) => ShowViewHint();
+        foreach (ComboBox c in new[] { _zoom, _offX, _offY, _angle })
+            c.SelectionChanged += (_, _) => ShowViewHint();
         _resetFine.Click += (_, _) => ResetFine();
         var fine = Ui.Row(Ui.Label("Grösse", "Size", muted: true), _zoom,
                           Ui.Label("Versatz X", "Offset X", muted: true), _offX,
                           Ui.Label("Y", "Y", muted: true), _offY,
                           Ui.Label("Neigung", "Tilt", muted: true), _angle, _resetFine);
-        fine.WrapContents = true;
         Ui.AddRow(grid, Ui.Label("Feinabstimmung", "Fine tuning", muted: true), fine);
-        Ui.AddRow(grid, new Label { Width = 1 }, _viewHint);
+        Ui.AddRow(grid, Ui.Spacer(), _viewHint);
         Ui.AddRow(grid, Ui.Label("Qualität", "Quality", muted: true), _quality);
         Ui.AddRow(grid, Ui.Label("Bilder/s", "Frames/s", muted: true), _fps);
         Ui.AddRow(grid, Ui.Label("Ton", "Audio", muted: true), _audio);
-        Ui.AddRow(grid, new Label { Width = 1 }, _control);
-        Ui.AddRow(grid, new Label { Width = 1 }, _onTop);
-        Ui.AddRow(grid, new Label { Width = 1 }, _proximity);
-        Ui.AddRow(grid, new Label { Width = 1 }, _record);
-        Ui.AddRow(grid, Ui.Label("Videos", "Videos", muted: true), Ui.Row(_folder, _browse));
-        Ui.AddRow(grid, Ui.Label("Screenshots", "Screenshots", muted: true), Ui.Row(_shotFolder, _shotBrowse));
+        Ui.AddRow(grid, Ui.Spacer(), _control);
+        Ui.AddRow(grid, Ui.Spacer(), _onTop);
+        Ui.AddRow(grid, Ui.Spacer(), _proximity);
+        Ui.AddRow(grid, Ui.Spacer(), _record);
+        Ui.AddRow(grid, Ui.Label("Videos", "Videos", muted: true), FolderRow(_folder, _browse));
+        Ui.AddRow(grid, Ui.Label("Screenshots", "Screenshots", muted: true), FolderRow(_shotFolder, _shotBrowse));
         optCard.SetContent(grid);
 
         // --- actions ------------------------------------------------------------
@@ -238,69 +241,60 @@ internal sealed class StreamPage : UserControl, IPage
         _openFolder.Click += (_, _) =>
         {
             try { Directory.CreateDirectory(Folder); } catch { }
-            SettingsPage.OpenPath(Folder);
+            Platform.OpenFolder(Folder);
         };
         _openShots.Click += (_, _) =>
         {
             try { Directory.CreateDirectory(ShotFolder); } catch { }
-            SettingsPage.OpenPath(ShotFolder);
+            Platform.OpenFolder(ShotFolder);
         };
-        var actions = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 6, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
-        for (int i = 0; i < 5; i++) actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        actions.Controls.Add(_start, 0, 0);
-        actions.Controls.Add(_stop, 1, 0);
-        actions.Controls.Add(_screenshot, 2, 0);
-        actions.Controls.Add(_openFolder, 3, 0);
-        actions.Controls.Add(_openShots, 4, 0);
-        actions.Controls.Add(_progress, 5, 0);
-        _status.AutoEllipsis = true;
-        _status.Margin = new Padding(0, 6, 0, 6);
-        actions.Controls.Add(_status, 0, 1);
-        actions.SetColumnSpan(_status, 6);
+        var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,Auto,*"), Margin = new Thickness(0, 0, 0, 6) };
+        Control[] act = { _start, _stop, _screenshot, _openFolder, _openShots, _progress };
+        for (int i = 0; i < act.Length; i++) { Grid.SetColumn(act[i], i); actions.Children.Add(act[i]); }
+        _status.TextTrimming = TextTrimming.CharacterEllipsis;
+        _status.TextWrapping = TextWrapping.NoWrap;
+        _status.Margin = new Thickness(0, 6, 0, 6);
 
-        var logCard = new Card("Protokoll", "Log") { Dock = DockStyle.Top, Height = 200 };
+        var logCard = new Card("Protokoll", "Log");
         Ui.Placeholder(_log, "Hier erscheinen die Meldungen des Streams.", "Messages of the stream appear here.");
-        logCard.SetContent(_log, fill: true);
+        _log.Height = 170;
+        logCard.SetContent(_log);
 
         BuildCastUi();
-        Controls.Add(logCard);
-        Controls.Add(Spacer());
-        Controls.Add(actions);
-        Controls.Add(Spacer());
-        Controls.Add(optCard);
-        Controls.Add(_castCard);
-        Controls.Add(Spacer());
-        Controls.Add(toolCard);
-        Controls.Add(Spacer());
-        Controls.Add(BuildModeCard());
+        Content = new StackPanel
+        {
+            Margin = new Thickness(20, 16),
+            Children = { BuildModeCard(), _toolCard, _castCard, optCard, actions, _status, logCard },
+        };
         ApplyMode();
     }
 
-    private static Panel Spacer() => new() { Dock = DockStyle.Top, Height = 12, BackColor = Color.Transparent };
+    private static Control FolderRow(TextBox box, Button browse)
+    {
+        var row = new DockPanel();
+        DockPanel.SetDock(browse, Dock.Right);
+        browse.Margin = default;
+        browse.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(browse);
+        row.Children.Add(box);
+        return row;
+    }
 
     private void FillCombos()
     {
-        int q = _quality.SelectedIndex, f = _fps.SelectedIndex, a = _audio.SelectedIndex;
-        _quality.Items.Clear();
-        foreach (var x in Qualities) _quality.Items.Add(Loc.T(x.De, x.En));
-        int v = _view.SelectedIndex;
-        _view.Items.Clear();
-        foreach (var x in Views) _view.Items.Add(Loc.T(x.De, x.En));
+        int q = _quality.SelectedIndex, f = _fps.SelectedIndex, a = _audio.SelectedIndex, v = _view.SelectedIndex;
+        _quality.ItemsSource = Qualities.Select(x => Loc.T(x.De, x.En)).ToList();
+        _view.ItemsSource = Views.Select(x => Loc.T(x.De, x.En)).ToList();
+        _fps.ItemsSource = FpsValues.Select(x => $"{x}").ToList();
+        _audio.ItemsSource = new[] { Loc.T("Kein Ton", "No audio"), Loc.T("Ton des Headsets", "Headset audio"), Loc.T("Mikrofon des Headsets", "Headset microphone") };
         if (v >= 0) _view.SelectedIndex = v;
-        _fps.Items.Clear();
-        foreach (int x in FpsValues) _fps.Items.Add($"{x}");
-        _audio.Items.Clear();
-        _audio.Items.Add(Loc.T("Kein Ton", "No audio"));
-        _audio.Items.Add(Loc.T("Ton des Headsets", "Headset audio"));
-        _audio.Items.Add(Loc.T("Mikrofon des Headsets", "Headset microphone"));
         if (q >= 0) _quality.SelectedIndex = q;
         if (f >= 0) _fps.SelectedIndex = f;
         if (a >= 0) _audio.SelectedIndex = a;
     }
 
-    private string Folder => Environment.ExpandEnvironmentVariables(_folder.Text.Trim().Length > 0 ? _folder.Text.Trim() : _state.Settings.StreamFolder);
-    private string ShotFolder => Environment.ExpandEnvironmentVariables(_shotFolder.Text.Trim().Length > 0 ? _shotFolder.Text.Trim()
+    private string Folder => Privacy.Expand((_folder.Text ?? "").Trim().Length > 0 ? (_folder.Text ?? "").Trim() : _state.Settings.StreamFolder);
+    private string ShotFolder => Privacy.Expand((_shotFolder.Text ?? "").Trim().Length > 0 ? (_shotFolder.Text ?? "").Trim()
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"));
 
     // ------------------------------------------------------------------
@@ -318,20 +312,22 @@ internal sealed class StreamPage : UserControl, IPage
 
     private void UpdateEnabled()
     {
-        if (InvokeRequired) { BeginInvoke(new Action(UpdateEnabled)); return; }
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(UpdateEnabled); return; }
         bool ready = _state.HasAdb && _state.SelectedDevice is { IsReady: true };
         bool streaming = Streaming;
-        _start.Enabled = ready && _scrcpy is not null && !streaming && !_downloading && (!_modeCast.Checked || SelectedCastKind != CastKind.None);
-        _stop.Enabled = streaming;
-        _screenshot.Enabled = ready && !_state.IsBusy;
-        _download.Enabled = _choose.Enabled = !_downloading && !streaming;
-        _listDisplays.Enabled = ready && !streaming;
-        _displayCombo.Enabled = !streaming;
+        bool cast = _modeCast.IsChecked == true;
+        bool tool = _scrcpy is not null || (cast && !ScrcpyTool.CastingNeedsScrcpy);
+        _start.IsEnabled = ready && tool && !streaming && !_downloading && (!cast || SelectedCastKind != CastKind.None);
+        _stop.IsEnabled = streaming;
+        _screenshot.IsEnabled = ready && !_state.IsBusy;
+        _download.IsEnabled = _choose.IsEnabled = !_downloading && !streaming;
+        _listDisplays.IsEnabled = ready && !streaming;
+        _displayCombo.IsEnabled = !streaming;
         foreach (Control c in new Control[] { _modeCast, _modeScrcpy, _hmdQuest, _hmdPfd, _hmdPico, _castProximity, _castOnTop, _castRecord })
-            c.Enabled = !streaming;
+            c.IsEnabled = !streaming;
         foreach (Control c in new Control[] { _view, _rotation, _zoom, _offX, _offY, _angle, _resetFine, _displayCombo, _quality, _fps, _audio, _control, _onTop, _proximity, _record, _folder, _browse, _shotFolder, _shotBrowse })
-            c.Enabled = !streaming;
-        _proximity.Text = IsQuest
+            c.IsEnabled = !streaming;
+        _proximity.Content = IsQuest
             ? Loc.T("Näherungssensor während des Streams aus", "Proximity sensor off while streaming")
             : Loc.T("Display-Timeout während des Streams auf 1 Stunde verlängern", "Extend the display timeout to 1 hour while streaming");
 
@@ -341,9 +337,9 @@ internal sealed class StreamPage : UserControl, IPage
                 ? Loc.T("ADB ist nicht eingerichtet (Tab „Allgemeine Einstellungen“).", "ADB is not set up (\"General settings\" tab).")
                 : _state.SelectedDevice is not { IsReady: true } d
                     ? Loc.T("Kein bereites Gerät ausgewählt.", "No ready device selected.")
-                    : _scrcpy is null
+                    : !tool
                         ? Loc.T("scrcpy fehlt – oben „scrcpy herunterladen“ klicken.", "scrcpy is missing – click \"Download scrcpy\" above.")
-                        : _modeCast.Checked && SelectedCastKind == CastKind.None
+                        : cast && SelectedCastKind == CastKind.None
                             ? Loc.T("Headset auswählen (Meta Quest, Play For Dream oder PICO) oder zu „scrcpy“ wechseln.", "Choose the headset (Meta Quest, Play For Dream or PICO) or switch to \"scrcpy\".")
                             : Loc.T($"Bereit: {d.DisplayName} ({d.ShownSerial})", $"Ready: {d.DisplayName} ({d.ShownSerial})");
         }
@@ -353,8 +349,7 @@ internal sealed class StreamPage : UserControl, IPage
 
     private void Log(string text)
     {
-        if (IsDisposed) return;
-        if (InvokeRequired) { BeginInvoke(new Action(() => Log(text))); return; }
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(() => Log(text)); return; }
         Ui.AppendLine(_log, text);
     }
 
@@ -367,17 +362,17 @@ internal sealed class StreamPage : UserControl, IPage
         if (_scrcpy is null)
         {
             _scrcpyStatus.Text = Loc.T("scrcpy ist noch nicht vorhanden.", "scrcpy is not available yet.");
-            _scrcpyStatus.ForeColor = Theme.Warning;
-            Loc.Bind(_download, t => _download.Text = t, "scrcpy herunterladen", "Download scrcpy");
+            _scrcpyStatus.Foreground = AppTheme.Warning;
+            _download.Content = Loc.T("scrcpy herunterladen", "Download scrcpy");
         }
         else
         {
             string exe = _scrcpy;
             string version = await ScrcpyTool.VersionAsync(exe);
-            if (IsDisposed || exe != _scrcpy) return;
-            _scrcpyStatus.Text = Loc.T($"scrcpy {version} · {exe}", $"scrcpy {version} · {exe}");
-            _scrcpyStatus.ForeColor = Theme.Text;
-            _download.Text = Loc.T("Neueste Version laden", "Get latest version");
+            if (exe != _scrcpy) return;
+            _scrcpyStatus.Text = Loc.T($"scrcpy {version} · {Privacy.MaskPaths(exe)}", $"scrcpy {version} · {Privacy.MaskPaths(exe)}");
+            _scrcpyStatus.Foreground = AppTheme.Text;
+            _download.Content = Loc.T("Neueste Version laden", "Get latest version");
         }
         UpdateEnabled();
     }
@@ -386,11 +381,11 @@ internal sealed class StreamPage : UserControl, IPage
     {
         if (_downloading) return;
         _downloading = true;
-        _progress.Visible = true;
+        _progress.IsVisible = true;
         _progress.Value = 0;
         UpdateEnabled();
         _status.Text = Loc.T("scrcpy wird heruntergeladen …", "Downloading scrcpy …");
-        var progress = new Progress<(long Done, long Total)>(p => _progress.Value = p.Total > 0 ? (int)(p.Done * 1000 / p.Total) : 0);
+        var progress = new Progress<(long Done, long Total)>(p => _progress.Value = p.Total > 0 ? p.Done * 1000.0 / p.Total : 0);
         try
         {
             string exe = await ScrcpyTool.DownloadLatestAsync(progress, Log, CancellationToken.None);
@@ -402,35 +397,40 @@ internal sealed class StreamPage : UserControl, IPage
         catch (Exception ex)
         {
             Log(Loc.T("Download fehlgeschlagen: ", "Download failed: ") + ex.Message);
-            MessageBox.Show(FindForm(), Loc.T("scrcpy konnte nicht geladen werden:\n", "scrcpy could not be downloaded:\n") + ex.Message +
-                Loc.T($"\n\nAlternativ manuell von {ScrcpyTool.ProjectUrl} laden und „scrcpy.exe auswählen …“ verwenden.",
-                      $"\n\nAlternatively download it from {ScrcpyTool.ProjectUrl} and use \"Choose scrcpy.exe …\"."),
-                "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            string exeName = Platform.Exe("scrcpy");
+            await Dialogs.Message(Owner, Loc.T("scrcpy konnte nicht geladen werden:\n", "scrcpy could not be downloaded:\n") + ex.Message +
+                (Platform.IsWindows ? "" : Loc.T("\n\nUnter Linux am einfachsten über die Paketverwaltung installieren (z. B. „sudo pacman -S scrcpy“ oder „sudo apt install scrcpy“).",
+                                                 "\n\nOn Linux the easiest way is the package manager (e.g. \"sudo pacman -S scrcpy\" or \"sudo apt install scrcpy\").")) +
+                Loc.T($"\n\nAlternativ manuell von {ScrcpyTool.ProjectUrl} laden und „{exeName} auswählen …“ verwenden.",
+                      $"\n\nAlternatively download it from {ScrcpyTool.ProjectUrl} and use \"Choose {exeName} …\"."),
+                "ADBora", MessageKind.Warning);
         }
         finally
         {
             _downloading = false;
-            _progress.Visible = false;
+            _progress.IsVisible = false;
             await ShowScrcpyAsync();
         }
     }
 
-    private void ChooseScrcpy()
+    private async Task ChooseScrcpy()
     {
-        using var dialog = new OpenFileDialog { Title = Loc.T("scrcpy.exe auswählen", "Choose scrcpy.exe"), Filter = "scrcpy.exe|scrcpy.exe" };
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
-        _scrcpy = dialog.FileName;
+        if (Owner is not { } owner) return;
+        string exeName = Platform.Exe("scrcpy");
+        string? file = await Dialogs.OpenFile(owner, Loc.T($"{exeName} auswählen", $"Choose {exeName}"), null, (exeName, new[] { exeName }), (Loc.T("Alle Dateien", "All files"), new[] { "*" }));
+        if (file is null) return;
+        _scrcpy = file;
         _state.Settings.ScrcpyPath = _scrcpy;
         _state.Settings.Save();
         _ = ShowScrcpyAsync();
     }
 
-    private void ChooseFolder(TextBox box, string title)
+    private async Task ChooseFolder(TextBox box, string title)
     {
-        using var dialog = new FolderBrowserDialog { Description = title, UseDescriptionForTitle = true };
-        string current = Environment.ExpandEnvironmentVariables(box.Text.Trim());
-        if (Directory.Exists(current)) dialog.SelectedPath = current;
-        if (dialog.ShowDialog(FindForm()) == DialogResult.OK) box.Text = Privacy.ShowPath(dialog.SelectedPath);
+        if (Owner is not { } owner) return;
+        string current = Privacy.Expand((box.Text ?? "").Trim());
+        string? folder = await Dialogs.OpenFolder(owner, title, Directory.Exists(current) ? current : null);
+        if (folder is not null) box.Text = Privacy.ShowPath(folder);
     }
 
     // ------------------------------------------------------------------
@@ -469,19 +469,14 @@ internal sealed class StreamPage : UserControl, IPage
             }
         }
         catch { }
-        if (_state.SelectedDevice?.Serial != device.Serial || IsDisposed) return;
+        if (_state.SelectedDevice?.Serial != device.Serial) return;
 
         _displays.Clear();
         _displays.AddRange(found.OrderBy(f => f.Id));
         _displaySerial = device.Serial;
-        _displayCombo.Items.Clear();
-        foreach (var d in _displays)
-            _displayCombo.Items.Add($"Display {d.Id} · {d.W} × {d.H} · {d.Name}");
         if (_displays.Count == 0)
-        {
             _displays.Add((0, 0, 0, ""));
-            _displayCombo.Items.Add(Loc.T("Display 0 (Standard)", "Display 0 (default)"));
-        }
+        _displayCombo.ItemsSource = _displays.Select(d => d.W > 0 ? $"Display {d.Id} · {d.W} × {d.H} · {d.Name}" : Loc.T("Display 0 (Standard)", "Display 0 (default)")).ToList();
 
         // Preselection: last settings for this model, otherwise automatic
         if (_state.Settings.StreamPresets.TryGetValue(device.Model, out StreamPreset? preset))
@@ -523,7 +518,6 @@ internal sealed class StreamPage : UserControl, IPage
 
     private void ShowViewHint()
     {
-        if (IsDisposed) return;
         string hint = "";
         if (SelectedDisplay is { W: > 0 } d)
         {
@@ -539,7 +533,7 @@ internal sealed class StreamPage : UserControl, IPage
         UpdateEnabled();
     }
 
-    private static void SelectValue(DarkComboBox combo, int[] values, int value) =>
+    private static void SelectValue(ComboBox combo, int[] values, int value) =>
         combo.SelectedIndex = Math.Max(0, Array.IndexOf(values, value));
 
     private int ZoomPercent => ZoomValues[Math.Max(0, _zoom.SelectedIndex)];
@@ -587,7 +581,7 @@ internal sealed class StreamPage : UserControl, IPage
 
     private async Task StartStreamAsync()
     {
-        if (_modeCast.Checked) { await StartCastAsync(); return; }
+        if (_modeCast.IsChecked == true) { await StartCastAsync(); return; }
         AdbDevice? device = _state.SelectedDevice;
         if (_scrcpy is null || device is not { IsReady: true } || Streaming) return;
         await DetectDisplayAsync();
@@ -620,11 +614,11 @@ internal sealed class StreamPage : UserControl, IPage
             case 2: args.Add("--audio-source=mic"); break;
             default: args.Add("--no-audio"); break;
         }
-        if (!_control.Checked) args.Add("--no-control");
-        if (_onTop.Checked) args.Add("--always-on-top");
+        if (_control.IsChecked != true) args.Add("--no-control");
+        if (_onTop.IsChecked == true) args.Add("--always-on-top");
 
         _recordFile = null;
-        if (_record.Checked)
+        if (_record.IsChecked == true)
         {
             try
             {
@@ -634,12 +628,12 @@ internal sealed class StreamPage : UserControl, IPage
             }
             catch (Exception ex)
             {
-                MessageBox.Show(FindForm(), Loc.T("Zielordner ungültig: ", "Invalid folder: ") + ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                await Dialogs.Message(Owner, Loc.T("Zielordner ungültig: ", "Invalid folder: ") + ex.Message, "ADBora", MessageKind.Warning);
                 return;
             }
         }
 
-        if (_proximity.Checked) await KeepAwakeAsync(device);
+        if (_proximity.IsChecked == true) await KeepAwakeAsync(device);
 
         var psi = new ProcessStartInfo(_scrcpy)
         {
@@ -660,7 +654,7 @@ internal sealed class StreamPage : UserControl, IPage
             var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
             p.OutputDataReceived += (_, e) => { if (e.Data is { Length: > 0 }) Log(e.Data); };
             p.ErrorDataReceived += (_, e) => { if (e.Data is { Length: > 0 }) Log(e.Data); };
-            p.Exited += (_, _) => BeginInvoke(new Action(() => OnStreamExited(p)));
+            p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnStreamExited(p));
             p.Start();
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
@@ -750,8 +744,15 @@ internal sealed class StreamPage : UserControl, IPage
         {
             if (!p.HasExited)
             {
-                p.Refresh();
-                bool closed = p.MainWindowHandle != IntPtr.Zero && p.CloseMainWindow();
+                // Windows: close the window; Linux: SIGINT (= Ctrl+C) – scrcpy then finalizes the recording
+                bool closed;
+                if (OperatingSystem.IsWindows())
+                {
+                    p.Refresh();
+                    closed = p.MainWindowHandle != IntPtr.Zero && p.CloseMainWindow();
+                }
+                else
+                    closed = SysKill(p.Id, 2 /* SIGINT */) == 0;
                 if (!closed || !p.WaitForExit(wait ? 6000 : 1500))
                     AdbClient.KillQuietly(p);
             }
@@ -759,52 +760,48 @@ internal sealed class StreamPage : UserControl, IPage
         catch { }
     }
 
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static extern int SysKill(int pid, int signal);
+
     // ------------------------------------------------------------------
     // Mode switch and headset casting
     // ------------------------------------------------------------------
 
     private Control BuildModeCard()
     {
-        var card = new Card("Modus", "Mode") { Dock = DockStyle.Top };
-        var box = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Dock = DockStyle.Top };
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var row = Ui.Row(_modeCast, _modeScrcpy);
-        row.WrapContents = true;
-        box.Controls.Add(row);
-        _modeHint.Margin = new Padding(0, 4, 0, 0);
-        Ui.WrapTo(_modeHint, this, 40);
-        box.Controls.Add(_modeHint);
-        card.SetContent(box);
-        _modeCast.Checked = true;
-        _modeCast.CheckedChanged += (_, _) => { if (_modeCast.Checked) ApplyMode(); };
-        _modeScrcpy.CheckedChanged += (_, _) => { if (_modeScrcpy.Checked) ApplyMode(); };
+        var card = new Card("Modus", "Mode");
+        _modeCast.GroupName = _modeScrcpy.GroupName = "streamMode";
+        card.SetContent(Ui.Row(_modeCast, _modeScrcpy));
+        _modeHint.Margin = new Thickness(0, 4, 0, 0);
+        card.SetContent(_modeHint);
+        _modeCast.IsChecked = true;
+        _modeCast.IsCheckedChanged += (_, _) => { if (_modeCast.IsChecked == true) ApplyMode(); };
+        _modeScrcpy.IsCheckedChanged += (_, _) => { if (_modeScrcpy.IsChecked == true) ApplyMode(); };
         return card;
     }
 
     private void BuildCastUi()
     {
-        _castCard = new Card("Headset-Casting", "Headset casting") { Dock = DockStyle.Top };
+        _castCard = new Card("Headset-Casting", "Headset casting");
         var grid = Ui.Grid(2);
-        var hmds = Ui.Row(_hmdQuest, _hmdPfd, _hmdPico);
-        hmds.WrapContents = true;
-        Ui.AddRow(grid, Ui.Label("Headset", "Headset", muted: true), hmds);
-        _castInfo.Margin = new Padding(0, 2, 0, 8);
-        Ui.WrapTo(_castInfo, this, 200);
-        Ui.AddRow(grid, new Label { Width = 1 }, _castInfo);
-        _castProximity.Checked = true;
-        _castOnTop.Checked = _state.Settings.StreamOnTop;
-        _castRecord.Checked = _state.Settings.StreamRecord;
-        _castOnTop.CheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _castOnTop.Checked; _onTop.Checked = _castOnTop.Checked; _state.Settings.Save(); };
-        _castRecord.CheckedChanged += (_, _) => { _state.Settings.StreamRecord = _castRecord.Checked; _record.Checked = _castRecord.Checked; _state.Settings.Save(); };
-        _castAudio.Checked = _state.Settings.CastAudio;
-        _castAudio.CheckedChanged += (_, _) =>
+        _hmdQuest.GroupName = _hmdPfd.GroupName = _hmdPico.GroupName = "castHmd";
+        Ui.AddRow(grid, Ui.Label("Headset", "Headset", muted: true), Ui.Row(_hmdQuest, _hmdPfd, _hmdPico));
+        _castInfo.Margin = new Thickness(0, 2, 0, 8);
+        Ui.AddRow(grid, Ui.Spacer(), _castInfo);
+        _castProximity.IsChecked = true;
+        _castOnTop.IsChecked = _state.Settings.StreamOnTop;
+        _castRecord.IsChecked = _state.Settings.StreamRecord;
+        _castOnTop.IsCheckedChanged += (_, _) => { _state.Settings.StreamOnTop = _castOnTop.IsChecked == true; _onTop.IsChecked = _castOnTop.IsChecked; _state.Settings.Save(); };
+        _castRecord.IsCheckedChanged += (_, _) => { _state.Settings.StreamRecord = _castRecord.IsChecked == true; _record.IsChecked = _castRecord.IsChecked; _state.Settings.Save(); };
+        _castAudio.IsChecked = _state.Settings.CastAudio;
+        _castAudio.IsCheckedChanged += (_, _) =>
         {
-            _state.Settings.CastAudio = _castAudio.Checked;
+            _state.Settings.CastAudio = _castAudio.IsChecked == true;
             _state.Settings.Save();
-            if (_cast is not null) _cast.Muted = !_castAudio.Checked;
+            if (_cast is not null) _cast.Muted = _castAudio.IsChecked != true;
         };
-        foreach (int v in VolumeValues) _castVolume.Items.Add($"{v} %");
-        _castVolume.SelectedIndexChanged += (_, _) =>
+        _castVolume.ItemsSource = VolumeValues.Select(v => $"{v} %").ToList();
+        _castVolume.SelectionChanged += (_, _) =>
         {
             if (_volumeLoading || _castVolume.SelectedIndex < 0) return;
             int v = VolumeValues[_castVolume.SelectedIndex];
@@ -813,32 +810,28 @@ internal sealed class StreamPage : UserControl, IPage
             if (_cast is not null) _cast.Volume = v;
         };
         LoadVolume();
-        var audioRow = Ui.Row(_castAudio, Ui.Label("Lautstärke", "Volume", muted: true), _castVolume);
-        audioRow.WrapContents = true;
-        Ui.AddRow(grid, new Label { Width = 1 }, audioRow);
-        _castMic.Checked = _state.Settings.CastMic;
-        _castMic.CheckedChanged += async (_, _) =>
+        Ui.AddRow(grid, Ui.Spacer(), Ui.Row(_castAudio, Ui.Label("Lautstärke", "Volume", muted: true), _castVolume));
+        _castMic.IsChecked = _state.Settings.CastMic;
+        _castMic.IsCheckedChanged += async (_, _) =>
         {
-            _state.Settings.CastMic = _castMic.Checked;
+            _state.Settings.CastMic = _castMic.IsChecked == true;
             _state.Settings.Save();
             if (_cast is not null) await ApplyMicAsync(_cast);
         };
         var micHint = Ui.Label("Dafür installiert ADBora einmalig die kleine Begleit-App „ADBora Mic“ (Open Source, ohne Netzwerkzugriff) auf dem Headset; das Casting der Hersteller schickt das Mikrofon nicht mit.",
                                "For this ADBora installs the small companion app \"ADBora Mic\" (open source, no network access) on the headset once; the manufacturers' casting does not send the microphone.", muted: true);
-        Ui.WrapTo(micHint, this, 200);
-        Ui.AddRow(grid, new Label { Width = 1 }, _castMic);
-        Ui.AddRow(grid, new Label { Width = 1 }, micHint);
-        Ui.AddRow(grid, new Label { Width = 1 }, _castProximity);
-        Ui.AddRow(grid, new Label { Width = 1 }, _castOnTop);
-        Ui.AddRow(grid, new Label { Width = 1 }, _castRecord);
+        Ui.AddRow(grid, Ui.Spacer(), _castMic);
+        Ui.AddRow(grid, Ui.Spacer(), micHint);
+        Ui.AddRow(grid, Ui.Spacer(), _castProximity);
+        Ui.AddRow(grid, Ui.Spacer(), _castOnTop);
+        Ui.AddRow(grid, Ui.Spacer(), _castRecord);
         var keys = Ui.Label("Im Stream-Fenster: Doppelklick oder F11 = Vollbild, Esc = Vollbild beenden, F12 = Screenshot, M = Ton ein/aus, + / − = Lautstärke.",
                             "In the stream window: double-click or F11 = full screen, Esc = leave full screen, F12 = screenshot, M = audio on/off, + / − = volume.", muted: true);
-        Ui.WrapTo(keys, this, 200);
-        Ui.AddRow(grid, new Label { Width = 1 }, keys);
+        Ui.AddRow(grid, Ui.Spacer(), keys);
         _castCard.SetContent(grid);
-        _hmdQuest.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
-        _hmdPfd.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
-        _hmdPico.CheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+        _hmdQuest.IsCheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+        _hmdPfd.IsCheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
+        _hmdPico.IsCheckedChanged += (_, _) => { LoadVolume(); ShowCastInfo(); };
     }
 
     /// <summary>Volume of the selected headset (saved separately for Quest and PFD).</summary>
@@ -850,15 +843,17 @@ internal sealed class StreamPage : UserControl, IPage
         _volumeLoading = false;
     }
 
-    private CastKind SelectedCastKind => _hmdQuest.Checked ? CastKind.Quest : _hmdPfd.Checked ? CastKind.PlayForDream : _hmdPico.Checked ? CastKind.Pico : CastKind.None;
+    private CastKind SelectedCastKind => _hmdQuest.IsChecked == true ? CastKind.Quest : _hmdPfd.IsChecked == true ? CastKind.PlayForDream : _hmdPico.IsChecked == true ? CastKind.Pico : CastKind.None;
 
     private void ApplyMode()
     {
         if (_castCard is null) return;
-        bool cast = _modeCast.Checked;
-        _castCard.Visible = cast;
-        _optCard.Visible = !cast;
-        _beta.Visible = !cast;
+        bool cast = _modeCast.IsChecked == true;
+        _castCard.IsVisible = cast;
+        _optCard.IsVisible = !cast;
+        _beta.IsVisible = !cast;
+        // Linux: casting uses the system FFmpeg, scrcpy is optional there
+        _toolCard.IsVisible = !cast || ScrcpyTool.CastingNeedsScrcpy || _scrcpy is null && SelectedCastKind == CastKind.Pico;
         _modeHint.Text = cast
             ? Loc.T("Entzerrtes Bild wie beim offiziellen Casting, direkt über das USB-Kabel (oder WLAN-ADB) – ohne Browser, Handy-App oder Meta-Konto.",
                     "Undistorted picture like official casting, directly over the USB cable (or Wi-Fi ADB) – no browser, phone app or Meta account.")
@@ -869,7 +864,6 @@ internal sealed class StreamPage : UserControl, IPage
 
     private void ShowCastInfo()
     {
-        if (IsDisposed) return;
         string auto = _detected != CastKind.None && SelectedCastKind == _detected ? Loc.T(" (automatisch erkannt)", " (detected automatically)") : "";
         _castInfo.Text = SelectedCastKind switch
         {
@@ -892,13 +886,13 @@ internal sealed class StreamPage : UserControl, IPage
         if (device is not { IsReady: true } || !_state.HasAdb || Streaming) return;
         if (_detectedSerial == device.Serial) return;
         CastKind kind = await CastSource.DetectAsync(_state.AdbPath!, device);
-        if (IsDisposed || _state.SelectedDevice?.Serial != device.Serial || Streaming) return;
+        if (_state.SelectedDevice?.Serial != device.Serial || Streaming) return;
         _detectedSerial = device.Serial;
         _detected = kind;
-        if (kind == CastKind.Quest) _hmdQuest.Checked = true;
-        else if (kind == CastKind.PlayForDream) _hmdPfd.Checked = true;
-        else if (kind == CastKind.Pico) _hmdPico.Checked = true;
-        if (kind != CastKind.None) _modeCast.Checked = true; else _modeScrcpy.Checked = true;
+        if (kind == CastKind.Quest) _hmdQuest.IsChecked = true;
+        else if (kind == CastKind.PlayForDream) _hmdPfd.IsChecked = true;
+        else if (kind == CastKind.Pico) _hmdPico.IsChecked = true;
+        if (kind != CastKind.None) _modeCast.IsChecked = true; else _modeScrcpy.IsChecked = true;
         ApplyMode();
     }
 
@@ -906,11 +900,11 @@ internal sealed class StreamPage : UserControl, IPage
     {
         AdbDevice? device = _state.SelectedDevice;
         CastKind kind = SelectedCastKind;
-        if (_scrcpy is null || device is not { IsReady: true } || Streaming || kind == CastKind.None) return;
+        if ((_scrcpy is null && ScrcpyTool.CastingNeedsScrcpy) || device is not { IsReady: true } || Streaming || kind == CastKind.None) return;
         _castStarting = true;
         UpdateEnabled();
         string? record = null;
-        if (_castRecord.Checked)
+        if (_castRecord.IsChecked == true)
         {
             try
             {
@@ -919,31 +913,32 @@ internal sealed class StreamPage : UserControl, IPage
             }
             catch (Exception ex)
             {
-                MessageBox.Show(FindForm(), Loc.T("Zielordner ungültig: ", "Invalid folder: ") + ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                await Dialogs.Message(Owner, Loc.T("Zielordner ungültig: ", "Invalid folder: ") + ex.Message, "ADBora", MessageKind.Warning);
                 _castStarting = false;
                 UpdateEnabled();
                 return;
             }
         }
-        if (_castProximity.Checked) await KeepAwakeAsync(device);
+        if (_castProximity.IsChecked == true) await KeepAwakeAsync(device);
 
-        var session = new CastSession(kind, _state.AdbPath!, device.Serial, Path.GetDirectoryName(_scrcpy)!);
+        var session = new CastSession(kind, _state.AdbPath!, device.Serial, _scrcpy);
         session.Log += Log;
-        session.ScreenshotRequested += () => BeginInvoke(new Action(() => _ = ScreenshotAsync()));
-        session.MuteToggleRequested += () => BeginInvoke(new Action(() => _castAudio.Checked = !_castAudio.Checked));
-        session.VolumeStepRequested += d => BeginInvoke(new Action(() =>
-            _castVolume.SelectedIndex = Math.Clamp(_castVolume.SelectedIndex + d, 0, VolumeValues.Length - 1)));
+        session.ScreenshotRequested += () => Dispatcher.UIThread.Post(() => _ = ScreenshotAsync());
+        session.MuteToggleRequested += () => Dispatcher.UIThread.Post(() => _castAudio.IsChecked = _castAudio.IsChecked != true);
+        session.VolumeStepRequested += d => Dispatcher.UIThread.Post(() =>
+            _castVolume.SelectedIndex = Math.Clamp(_castVolume.SelectedIndex + d, 0, VolumeValues.Length - 1));
         session.Volume = VolumeValues[Math.Max(0, _castVolume.SelectedIndex)];
-        session.Ended += reason => BeginInvoke(new Action(() => OnCastEnded(session, reason)));
+        session.Ended += reason => Dispatcher.UIThread.Post(() => OnCastEnded(session, reason));
         _cast = session;
         Log("");
         Log(Loc.T($"Headset-Casting: {device.DisplayName} ({device.ShownSerial})", $"Headset casting: {device.DisplayName} ({device.ShownSerial})"));
         try
         {
-            await session.StartAsync($"ADBora Stream – {device.DisplayName}", _castOnTop.Checked, record, FindForm(), _castAudio.Checked);
+            var viewer = new CastViewer($"ADBora Stream – {device.DisplayName}", _castOnTop.IsChecked == true);
+            await session.StartAsync(viewer, record, _castAudio.IsChecked == true);
             if (_cast == session)
             {
-                if (_castMic.Checked) await ApplyMicAsync(session);
+                if (_castMic.IsChecked == true) await ApplyMicAsync(session);
                 _status.Text = Loc.T($"Stream läuft: {device.DisplayName}", $"Streaming: {device.DisplayName}") +
                                (session.RecordFile is not null ? Loc.T(" · Aufnahme läuft", " · recording") : "");
                 Log(Loc.T("Bild wird empfangen.", "Receiving picture."));
@@ -954,8 +949,7 @@ internal sealed class StreamPage : UserControl, IPage
             Log(Loc.T("Casting fehlgeschlagen: ", "Casting failed: ") + ex.Message);
             if (_cast == session) _cast = null;
             await RestoreProximityAsync();
-            if (!IsDisposed)
-                MessageBox.Show(FindForm(), ex.Message, "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            await Dialogs.Message(Owner, ex.Message, "ADBora", MessageKind.Warning);
         }
         finally
         {
@@ -967,7 +961,7 @@ internal sealed class StreamPage : UserControl, IPage
     /// <summary>Switches the headset microphone on or off according to the check box.</summary>
     private async Task ApplyMicAsync(CastSession session)
     {
-        try { await session.SetMicAsync(_castMic.Checked); }
+        try { await session.SetMicAsync(_castMic.IsChecked == true); }
         catch (Exception ex)
         {
             Log(Loc.T("Mikrofon nicht verfügbar: ", "Microphone not available: ") + ex.Message);
@@ -998,26 +992,58 @@ internal sealed class StreamPage : UserControl, IPage
     // Screenshot
     // ------------------------------------------------------------------
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static class Win32
+    {
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hWnd, IntPtr dc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr dc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, int rop);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines, IntPtr bits, ref BITMAPINFOHEADER info, uint usage);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr obj);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr dc);
+        public struct RECT { public int Left, Top, Right, Bottom; }
+        public struct POINT { public int X, Y; }
+        public struct BITMAPINFOHEADER { public uint Size; public int Width, Height; public ushort Planes, BitCount; public uint Compression, SizeImage; public int XPels, YPels; public uint ClrUsed, ClrImportant; }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool ClientToScreen(IntPtr hWnd, ref Point point);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    private struct RECT { public int Left, Top, Right, Bottom; }
+        /// <summary>Copies a screen area (the client area of the scrcpy window) into a 32-bit bitmap.</summary>
+        public static SKBitmap CaptureScreen(int x, int y, int w, int h)
+        {
+            IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), bmp = CreateCompatibleBitmap(screen, w, h);
+            IntPtr old = SelectObject(mem, bmp);
+            try
+            {
+                BitBlt(mem, 0, 0, w, h, screen, x, y, 0x00CC0020 /* SRCCOPY */);
+                var result = new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Opaque));
+                var info = new BITMAPINFOHEADER { Size = 40, Width = w, Height = -h, Planes = 1, BitCount = 32 };
+                GetDIBits(mem, bmp, 0, (uint)h, result.GetPixels(), ref info, 0);
+                return result;
+            }
+            finally
+            {
+                SelectObject(mem, old);
+                DeleteObject(bmp);
+                DeleteDC(mem);
+                ReleaseDC(IntPtr.Zero, screen);
+            }
+        }
+    }
 
     /// <summary>
-    /// While streaming: saves exactly what the stream window shows (all views and displays).
-    /// Without a stream: "screencap" of display 0 (with the chosen crop).
+    /// While casting: saves exactly what the cast window shows. scrcpy on Windows: the content of the
+    /// scrcpy window. Otherwise (and on Linux, where other windows cannot be captured under Wayland):
+    /// "screencap" of display 0 with the chosen crop.
     /// </summary>
     private async Task ScreenshotAsync()
     {
         AdbDevice? device = _state.SelectedDevice;
         if (device is not { IsReady: true } || !_state.HasAdb) return;
-        _screenshot.Enabled = false;
+        _screenshot.IsEnabled = false;
         try
         {
             Directory.CreateDirectory(ShotFolder);
@@ -1025,51 +1051,51 @@ internal sealed class StreamPage : UserControl, IPage
 
             if (_cast is not null)
             {
-                using Bitmap shot = _cast.Snapshot() ?? throw new InvalidOperationException(Loc.T("Noch kein Bild vorhanden.", "No picture yet."));
-                shot.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+                using SKBitmap shot = _cast.Snapshot() ?? throw new InvalidOperationException(Loc.T("Noch kein Bild vorhanden.", "No picture yet."));
+                ImageLoader.SavePng(shot, file);
             }
-            else if (_process is { HasExited: false } p)
+            else if (OperatingSystem.IsWindows() && _process is { HasExited: false } p)
             {
                 p.Refresh();
                 IntPtr hwnd = p.MainWindowHandle;
                 if (hwnd == IntPtr.Zero) throw new InvalidOperationException(Loc.T("Stream-Fenster nicht gefunden.", "Stream window not found."));
-                SetForegroundWindow(hwnd);
+                Win32.SetForegroundWindow(hwnd);
                 await Task.Delay(250);
-                GetClientRect(hwnd, out RECT rc);
-                var origin = new Point(0, 0);
-                ClientToScreen(hwnd, ref origin);
+                Win32.GetClientRect(hwnd, out Win32.RECT rc);
+                var origin = new Win32.POINT();
+                Win32.ClientToScreen(hwnd, ref origin);
                 int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
                 if (w <= 0 || h <= 0) throw new InvalidOperationException(Loc.T("Stream-Fenster ist minimiert.", "Stream window is minimized."));
-                using var bmp = new Bitmap(w, h);
-                using (Graphics g = Graphics.FromImage(bmp))
-                    g.CopyFromScreen(origin, Point.Empty, new Size(w, h));
-                bmp.Save(file, System.Drawing.Imaging.ImageFormat.Png);
-                FindForm()?.Activate();
+                using SKBitmap bmp = Win32.CaptureScreen(origin.X, origin.Y, w, h);
+                ImageLoader.SavePng(bmp, file);
+                Owner?.Activate();
             }
             else
             {
                 if (SelectedDisplay is { Id: not 0 })
                 {
-                    MessageBox.Show(FindForm(), Loc.T("Für dieses Display ist ein Screenshot nur während eines laufenden Streams möglich. Bitte zuerst „Stream starten“.",
-                            "For this display a screenshot is only possible while a stream is running. Please \"Start stream\" first."),
-                        "ADBora", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    await Dialogs.Message(Owner, Loc.T("Für dieses Display ist ein Screenshot nur über das Stream-Fenster möglich" + (Platform.IsWindows ? ". Bitte zuerst „Stream starten“." : " – unter Linux bitte die Bildschirmfoto-Funktion des Desktops nutzen (z. B. Spectacle)."),
+                            "For this display a screenshot is only possible from the stream window" + (Platform.IsWindows ? ". Please \"Start stream\" first." : " – on Linux please use the desktop's screenshot tool (e.g. Spectacle).")));
                     return;
                 }
                 await new AdbClient(_state.AdbPath!, device.Serial).ExecOutToFileAsync("screencap -p", file, CancellationToken.None);
                 if (SelectedDisplay is { } d && Crop(d) is { } crop)
                 {
                     int[] c = crop.Split(':').Select(int.Parse).ToArray();
-                    string temp = file + ".tmp";
-                    using (var full = new Bitmap(file))
+                    using SKBitmap? full = SKBitmap.Decode(file);
+                    if (full is not null)
                     {
-                        var rect = Rectangle.Intersect(new Rectangle(c[2], c[3], c[0], c[1]), new Rectangle(0, 0, full.Width, full.Height));
+                        var rect = SKRectI.Intersect(new SKRectI(c[2], c[3], c[2] + c[0], c[3] + c[1]), new SKRectI(0, 0, full.Width, full.Height));
                         if (rect.Width > 0 && rect.Height > 0)
                         {
-                            using Bitmap part = full.Clone(rect, full.PixelFormat);
-                            part.Save(temp, System.Drawing.Imaging.ImageFormat.Png);
+                            using var part = new SKBitmap();
+                            if (full.ExtractSubset(part, rect))
+                            {
+                                using SKBitmap copy = part.Copy();
+                                ImageLoader.SavePng(copy, file);
+                            }
                         }
                     }
-                    if (File.Exists(temp)) File.Move(temp, file, overwrite: true);
                 }
             }
             Log(Loc.T($"Screenshot gespeichert: {file}", $"Screenshot saved: {file}"));
