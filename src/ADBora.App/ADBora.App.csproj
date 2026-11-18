@@ -14,7 +14,6 @@
     <Product>ADBora</Product>
     <Authors>urscaviezel</Authors>
     <Description>ADBora – Android Device Toolbox: APK backup and install, speed test and ADB console.</Description>
-    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 

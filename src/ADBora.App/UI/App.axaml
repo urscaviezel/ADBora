@@ -129,5 +129,36 @@
     <Style Selector="CheckBox, RadioButton">
       <Setter Property="Foreground" Value="#e4ecf7" />
     </Style>
+
+    <!-- Tables built from ListBox rows (apps, explorer, console) -->
+    <Style Selector="ListBox.apps > ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderBrush" Value="#2b394f" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="ListBox.apps > ListBoxItem:nth-child(2n)">
+      <Setter Property="Background" Value="#1b293b" />
+    </Style>
+    <Style Selector="ListBox > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2e4860" />
+    </Style>
+    <Style Selector="ListBox > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#22344a" />
+    </Style>
+    <Style Selector="ListBox > ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#34506b" />
+    </Style>
+    <Style Selector="ListBox.console > ListBoxItem">
+      <Setter Property="Padding" Value="8,1" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="Button.trash:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#8a3b3b" />
+    </Style>
+    <Style Selector="ProgressBar">
+      <Setter Property="Foreground" Value="#67d5b5" />
+      <Setter Property="Background" Value="#1b293b" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
   </Application.Styles>
 </Application>

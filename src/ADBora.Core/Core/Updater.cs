@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
@@ -38,13 +39,16 @@ internal static class Updater
         {
             if (PretendVersion is not null && TryParseVersion(PretendVersion, out Version pretend))
                 return pretend;
-            Version? v = Assembly.GetExecutingAssembly().GetName().Version;
+            Version? v = MainAssembly.GetName().Version;
             return v is null ? new Version(0, 0, 0) : new Version(v.Major, v.Minor, Math.Max(0, v.Build));
         }
     }
 
+    /// <summary>The program (ADBora), not this library.</summary>
+    private static Assembly MainAssembly => Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+
     public static string BuildDate =>
-        Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
+        MainAssembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "BuildDate")?.Value ?? "-";
 
     public static InstallKind Kind
@@ -54,13 +58,18 @@ internal static class Updater
             if (AppSettings.IsPortable) return InstallKind.Portable;
             try
             {
-                if (Directory.EnumerateFiles(AppContext.BaseDirectory, "unins*.exe").Any())
+                // Windows: Inno Setup uninstaller; Linux: marker of the release archive (build/build-linux.sh)
+                if (Platform.IsWindows ? Directory.EnumerateFiles(AppContext.BaseDirectory, "unins*.exe").Any()
+                                       : File.Exists(Path.Combine(AppContext.BaseDirectory, LinuxReleaseMarker)))
                     return InstallKind.Installed;
             }
             catch { }
             return InstallKind.Other;
         }
     }
+
+    /// <summary>File in the Linux release archive that marks a release build (enables automatic updates).</summary>
+    public const string LinuxReleaseMarker = "release.flag";
 
     public static string KindText => Kind switch
     {
@@ -137,7 +146,12 @@ internal static class Updater
     public static bool IsNewer(ReleaseInfo release) => release.Version > CurrentVersion;
 
     /// <summary>The download matching this installation (setup or portable ZIP); null = manual update.</summary>
-    public static ReleaseAsset? PackageFor(ReleaseInfo release) => Kind switch
+    public static ReleaseAsset? PackageFor(ReleaseInfo release) => !Platform.IsWindows
+        ? (Kind is InstallKind.Installed or InstallKind.Portable
+            ? release.Assets.FirstOrDefault(a => a.Name.StartsWith("ADBora-", StringComparison.OrdinalIgnoreCase)
+                                              && a.Name.EndsWith($"-Linux-{LinuxArch}.tar.gz", StringComparison.OrdinalIgnoreCase))
+            : null)
+        : Kind switch
     {
         InstallKind.Installed => release.Assets.FirstOrDefault(a =>
             a.Name.StartsWith("ADBora-Setup", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)),
@@ -145,6 +159,8 @@ internal static class Updater
             a.Name.StartsWith("ADBora-Portable", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)),
         _ => null
     };
+
+    private static string LinuxArch => System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64";
 
     /// <summary>Portable update needs write access to the program folder.</summary>
     public static bool CanWriteProgramFolder()
@@ -215,7 +231,15 @@ internal static class Updater
     /// </summary>
     public static void StartInstall(string package)
     {
-        string exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "ADBora");
+        string exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, Platform.AppExe);
+
+        if (!Platform.IsWindows)
+        {
+            if (Kind is not (InstallKind.Installed or InstallKind.Portable))
+                throw new InvalidOperationException(Loc.T("Diese Kopie kann nicht automatisch aktualisiert werden.", "This copy cannot be updated automatically."));
+            if (!OperatingSystem.IsWindows()) StartLinuxUpdate(package, exe);
+            return;
+        }
 
         if (Kind == InstallKind.Installed)
         {
@@ -253,6 +277,49 @@ internal static class Updater
 
         throw new InvalidOperationException(Loc.T("Diese Kopie kann nicht automatisch aktualisiert werden.", "This copy cannot be updated automatically."));
     }
+
+    /// <summary>Linux: extracts the release archive and lets a shell script replace the program folder after ADBora exited.</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static void StartLinuxUpdate(string package, string exe)
+    {
+        string extract = Path.Combine(UpdateDirectory, "linux-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(extract);
+        using (FileStream file = File.OpenRead(package))
+        using (var gz = new GZipStream(file, CompressionMode.Decompress))
+            TarFile.ExtractToDirectory(gz, extract, overwriteFiles: true);   // keeps the executable bits
+        string source = extract;
+        if (!File.Exists(Path.Combine(source, "ADBora")))
+            source = Directory.GetDirectories(extract).FirstOrDefault(d => File.Exists(Path.Combine(d, "ADBora")))
+                     ?? throw new InvalidDataException(Loc.T("ADBora fehlt im Update-Paket.", "ADBora is missing in the update package."));
+
+        string script = Path.Combine(UpdateDirectory, "apply-update.sh");
+        File.WriteAllText(script, LinuxScript.Replace("\r\n", "\n"));
+        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var psi = new ProcessStartInfo("/bin/sh") { UseShellExecute = false };
+        foreach (string a in new[] { script, Environment.ProcessId.ToString(), source, AppContext.BaseDirectory.TrimEnd('/'), exe })
+            psi.ArgumentList.Add(a);
+        Process.Start(psi);
+    }
+
+    /// <summary>Waits for ADBora to exit, copies the new files over the program folder (keeps "Data") and restarts it.</summary>
+    private const string LinuxScript = """
+        #!/bin/sh
+        pid="$1"; src="$2"; dst="$3"; exe="$4"
+        i=0
+        while kill -0 "$pid" 2>/dev/null && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done
+        sleep 0.5
+        ok=0
+        for n in 1 2 3 4 5 6 7 8 9 10; do
+            if (cd "$src" && find . -mindepth 1 -maxdepth 1 ! -name Data -exec cp -a {} "$dst"/ \;); then ok=1; break; fi
+            sleep 0.7
+        done
+        if [ $ok -ne 1 ]; then
+            mkdir -p "$dst/Data" 2>/dev/null
+            echo "$(date -Iseconds) update failed" >> "${XDG_DATA_HOME:-$HOME/.local/share}/ADBora/update.log"
+        fi
+        nohup "$exe" >/dev/null 2>&1 &
+        rm -rf "$src"
+        """;
 
     private static bool IsUnder(string path, Environment.SpecialFolder folder)
     {

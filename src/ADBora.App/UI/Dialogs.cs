@@ -127,3 +127,29 @@ internal static class Dialogs
         catch { }
     }
 }
+
+internal static class InputDialog
+{
+    /// <summary>Single-line text input with an optional check box; null if cancelled.</summary>
+    public static async Task<(string Text, bool Checked)?> Show(Window owner, string title, string label, string value, string? checkText = null)
+    {
+        Window dialog = Dialogs.Dialog(title, 520, checkText is null ? 190 : 230);
+        dialog.CanResize = false;
+        var box = new TextBox { Text = value, Margin = new Thickness(0, 8, 0, 8) };
+        var check = new CheckBox { Content = checkText, IsVisible = checkText is not null };
+        var ok = Ui.Button("Speichern", "Save", ButtonKind.Primary);
+        var cancel = Ui.Button("Abbrechen", "Cancel");
+        cancel.Margin = default;
+        ok.IsDefault = true;
+        cancel.IsCancel = true;
+        bool accepted = false;
+        ok.Click += (_, _) => { accepted = true; dialog.Close(); };
+        cancel.Click += (_, _) => dialog.Close();
+        var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0), Children = { ok, cancel } };
+        var body = new StackPanel { Margin = new Thickness(20), Children = { new TextBlock { Text = label }, box, check, buttons } };
+        dialog.Content = body;
+        dialog.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        await dialog.ShowDialog(owner);
+        return accepted ? (box.Text ?? "", check.IsChecked == true) : null;
+    }
+}

@@ -46,6 +46,10 @@ internal static class Diagnostics
             return 0;
         }
 
+        int backupTest = Array.IndexOf(args, "--backup-test");
+        if (backupTest >= 0 && backupTest + 4 < args.Length)
+            return BackupTest(args[backupTest + 1], args[backupTest + 2], args[backupTest + 3], args[backupTest + 4]);
+
         if (args.Contains("--audio-test"))
             return AudioTest();
 
@@ -56,6 +60,25 @@ internal static class Diagnostics
         if (castTest >= 0 && castTest + 5 < args.Length)
             return CastTest(args[castTest + 1], args[castTest + 2], args[castTest + 3], int.Parse(args[castTest + 4]), args[castTest + 5]);
         return null;
+    }
+
+    /// <summary>Scans the user apps and backs up APK + OBB + Data of one package (like the Backup tab).</summary>
+    public static int BackupTest(string adb, string serial, string package, string destination)
+    {
+        void L(string t) => Console.WriteLine($"{DateTime.Now:HH:mm:ss} {t}");
+        try
+        {
+            var service = new BackupService(new AdbClient(adb, serial), L, (c, t) => { }, CancellationToken.None);
+            List<AppEntry> apps = service.ScanAsync(resolveNames: true).GetAwaiter().GetResult();
+            AppEntry app = apps.FirstOrDefault(a => a.Package == package) ?? throw new InvalidOperationException("package not found: " + package);
+            L($"{app.Name} {app.Version} apks={app.Apks.Count} obb={app.Obb} data={app.Data} debuggable={app.Debuggable}");
+            var sel = new BackupSelection(app, true, app.Obb == FolderState.Present, app.Data == FolderState.Present || app.Debuggable);
+            BackupReport report = service.BackupAsync(new List<BackupSelection> { sel }, destination, "TEST").GetAwaiter().GetResult();
+            L($"dir={report.Directory} completed={report.Apps.Sum(a => a.Completed.Count)} errors={report.Apps.Sum(a => a.Errors.Count)}");
+            foreach (var a in report.Apps) foreach (string e in a.Errors) L("ERROR " + e);
+            return report.Apps.Sum(a => a.Errors.Count) == 0 ? 0 : 2;
+        }
+        catch (Exception ex) { L("ERROR " + ex); return 1; }
     }
 
     /// <summary>Plays a 1.5 s test tone (440/660 Hz) on the default output of the PC.</summary>

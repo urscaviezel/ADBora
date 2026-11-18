@@ -127,13 +127,13 @@ internal sealed class MainWindow : Window
         _tabs.SelectedIndexChanged += ShowPage;
 
         _pages.Add(new SettingsPage(_state));
-        _pages.Add(new PendingPage("APK Backup", "APK backup"));
-        _pages.Add(new PendingPage("APK Install", "APK install"));
+        _pages.Add(new BackupPage(_state));
+        _pages.Add(new InstallPage(_state));
         _pages.Add(new PendingPage("Speedtest", "Speed test"));
         _pages.Add(new PendingPage("Stream (Beta)", "Stream (beta)"));
         _pages.Add(new PendingPage("Performance", "Performance"));
-        _pages.Add(new PendingPage("ADB Commands", "ADB commands"));
-        _pages.Add(new PendingPage("Build Info", "Build info"));
+        _pages.Add(new CommandsPage(_state));
+        _pages.Add(new InfoPage(_state, ExitForUpdate));
         foreach (Control page in _pages)
         {
             page.IsVisible = false;
@@ -193,6 +193,14 @@ internal sealed class MainWindow : Window
         }
 
         _poll.Start();
+
+        if (_state.Settings.CheckUpdatesOnStart)
+        {
+            Updater.CleanupDownloads();
+            await Task.Delay(2000);
+            if (IsVisible && !_closeRequested)
+                await UpdateUi.CheckAsync(this, _state, ExitForUpdate, manual: false);
+        }
     }
 
     /// <summary>

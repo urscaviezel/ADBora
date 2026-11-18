@@ -14,6 +14,11 @@ internal static class Program
             return code;
 
         SmokeTest = args.Contains("--smoke-test");
+
+        // Test switch: behave as if an older version were installed (update check).
+        int pretend = Array.IndexOf(args, "--pretend-version");
+        if (pretend >= 0 && pretend + 1 < args.Length)
+            Updater.PretendVersion = args[pretend + 1];
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

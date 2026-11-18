@@ -11,6 +11,8 @@ internal static class Responsive
     public static Grid TwoColumns(Control first, Control second, double breakpoint, Thickness padding, double firstPercent = 50, Action<bool>? changed = null)
     {
         var grid = new Grid { Margin = padding };
+        // only the gap between the columns is managed here; top/bottom margins of the children stay
+        Thickness m1 = first.Margin, m2 = second.Margin;
         grid.Children.Add(first);
         grid.Children.Add(second);
         bool? narrowNow = null;
@@ -28,7 +30,8 @@ internal static class Responsive
                 grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
                 Grid.SetColumn(first, 0); Grid.SetRow(first, 0);
                 Grid.SetColumn(second, 0); Grid.SetRow(second, 1);
-                first.Margin = second.Margin = default;
+                first.Margin = new Thickness(0, m1.Top, 0, m1.Bottom);
+                second.Margin = new Thickness(0, m2.Top, 0, m2.Bottom);
             }
             else
             {
@@ -37,8 +40,8 @@ internal static class Responsive
                 grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
                 Grid.SetColumn(first, 0); Grid.SetRow(first, 0);
                 Grid.SetColumn(second, 1); Grid.SetRow(second, 0);
-                first.Margin = new Thickness(0, 0, 10, 0);
-                second.Margin = new Thickness(10, 0, 0, 0);
+                first.Margin = new Thickness(0, m1.Top, 10, m1.Bottom);
+                second.Margin = new Thickness(10, m2.Top, 0, m2.Bottom);
             }
             changed?.Invoke(narrow);
         }

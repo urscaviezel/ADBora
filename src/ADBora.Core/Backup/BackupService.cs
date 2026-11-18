@@ -586,7 +586,10 @@ internal sealed class BackupService
             "For split apps, base and all splits belong together – never install them individually.\n\n" +
             manualEn + "\n" +
             "DE: INSTALL.cmd stellt nach der APK auch die Ordner OBB und Data wieder her, sofern sie im Backup sind.\n" +
-            "EN: After the APK, INSTALL.cmd also restores the OBB and Data folders if they are in the backup.\n";
+            "EN: After the APK, INSTALL.cmd also restores the OBB and Data folders if they are in the backup.\n\n" +
+            "LINUX / macOS\n" +
+            "DE: Im Terminal in diesem Ordner „sh INSTALL.sh [Seriennummer]“ ausführen – macht dasselbe wie INSTALL.cmd (adb und unzip nötig).\n" +
+            "EN: In a terminal in this folder run \"sh INSTALL.sh [serial]\" – does the same as INSTALL.cmd (needs adb and unzip).\n";
     }
 
     /// <summary>INSTALL.cmd: double-click installer for the app (single, split or .apks bundle).</summary>
@@ -655,6 +658,63 @@ internal sealed class BackupService
         }
         sb.Append(":done\r\necho.\r\necho OK\r\npause\r\nexit /b 0\r\n");
         sb.Append(":failed\r\necho.\r\necho Installation fehlgeschlagen / installation failed\r\npause\r\nexit /b 1\r\n");
+        return sb.ToString();
+    }
+
+    /// <summary>INSTALL.sh: the same as INSTALL.cmd for Linux / macOS (POSIX sh, needs adb and unzip for .apks bundles).</summary>
+    public static string InstallShellScript(List<string> fileNames, List<string> bundleEntries, string package = "")
+    {
+        static string Q(string value) => "'" + value.Replace("'", "'\\''") + "'";
+        var sb = new StringBuilder();
+        sb.Append("#!/bin/sh\n");
+        sb.Append("# ADBora - installs this app (APK, then OBB and Data if present) on the connected device. Usage: sh INSTALL.sh [serial]\n");
+        sb.Append("cd \"$(dirname \"$0\")\" || exit 1\n");
+        sb.Append("ADB=adb\n");
+        sb.Append("command -v adb >/dev/null 2>&1 || { echo 'adb not found - please install it (e.g. android-tools / adb package)'; exit 1; }\n");
+        sb.Append("if [ -n \"$1\" ]; then set -- -s \"$1\"; fi\n");
+        sb.Append("fail() { echo; echo 'Installation fehlgeschlagen / installation failed'; exit 1; }\n");
+        if (bundleEntries.Count > 0)
+        {
+            sb.Append("T=$(mktemp -d) || fail\n");
+            sb.Append($"unzip -q -o {Q("APK/" + fileNames[0])} -d \"$T\" || {{ rm -rf \"$T\"; fail; }}\n");
+            sb.Append("\"$ADB\" \"$@\" install-multiple -r " + string.Join(" ", bundleEntries.Select(e => "\"$T\"/" + Q(e))) + "\n");
+            sb.Append("RC=$?; rm -rf \"$T\"; [ $RC -eq 0 ] || fail\n");
+        }
+        else
+        {
+            string verb = fileNames.Count > 1 ? "install-multiple" : "install";
+            sb.Append($"\"$ADB\" \"$@\" {verb} -r " + string.Join(" ", fileNames.Select(n => Q("APK/" + n))) + " || fail\n");
+        }
+        sb.Append("echo 'APK OK'\n");
+        if (package.Length > 0)
+        {
+            sb.Append($"PKG={Q(package)}\n");
+            sb.Append("ST=/data/local/tmp/adbora-restore\n");
+            // OBB and Data: stage in /data/local/tmp and copy with the shell (newer Android refuses adb push into Android/data)
+            sb.Append("restore_dir() {\n");
+            sb.Append("  src=$1; kind=$2; shift 2\n");
+            sb.Append("  echo; echo \"$src -> /sdcard/Android/$kind/$PKG ...\"\n");
+            sb.Append("  \"$ADB\" \"$@\" shell \"rm -rf $ST && mkdir -p $ST\" || return 1\n");
+            sb.Append("  for f in \"$src\"/* \"$src\"/.[!.]*; do [ -e \"$f\" ] || continue; \"$ADB\" \"$@\" push \"$f\" \"$ST/\" || { \"$ADB\" \"$@\" shell rm -rf $ST; return 1; }; done\n");
+            sb.Append("  \"$ADB\" \"$@\" shell \"mkdir -p '/sdcard/Android/$kind/$PKG' && cp -r $ST/. '/sdcard/Android/$kind/$PKG/' && (" +
+                      FixPermissionsCommand("/sdcard/Android/$kind/$PKG") + " ; echo ADBORA_OK)\" | grep -q ADBORA_OK || { \"$ADB\" \"$@\" shell rm -rf $ST; return 1; }\n");
+            sb.Append("  \"$ADB\" \"$@\" shell rm -rf $ST\n");
+            sb.Append("  echo \"$src OK\"\n");
+            sb.Append("}\n");
+            sb.Append("if [ -d OBB ]; then restore_dir OBB obb \"$@\" || fail; fi\n");
+            sb.Append("if [ -d Data ]; then restore_dir Data data \"$@\" || fail; fi\n");
+            sb.Append($"if [ -f Internal/{InternalTarName} ]; then\n");
+            sb.Append("  echo; echo \"Internal -> /data/data/$PKG (run-as) ...\"\n");
+            sb.Append($"  \"$ADB\" \"$@\" push Internal/{InternalTarName} /data/local/tmp/adbora-internal.tar || fail\n");
+            sb.Append("  if \"$ADB\" \"$@\" shell \"" + InternalRestoreCommand("$PKG", "/data/local/tmp/adbora-internal.tar") + "\" | grep -q ADBORA_OK; then\n");
+            sb.Append("    \"$ADB\" \"$@\" shell rm -f /data/local/tmp/adbora-internal.tar; echo 'Internal OK'\n");
+            sb.Append("  else\n");
+            sb.Append("    \"$ADB\" \"$@\" shell rm -f /data/local/tmp/adbora-internal.tar >/dev/null 2>&1\n");
+            sb.Append("    echo 'Interne Daten konnten nicht zurueckgeschrieben werden (App nicht debuggable?) / internal data could not be restored (app not debuggable?)'; fail\n");
+            sb.Append("  fi\n");
+            sb.Append("fi\n");
+        }
+        sb.Append("echo; echo OK\n");
         return sb.ToString();
     }
 
@@ -819,6 +879,11 @@ internal sealed class BackupService
                                 Directory.Move(staging, Path.Combine(folder, "APK"));
                                 await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.txt"), InstallInstructions(fileNames, bundleEntries), new UTF8Encoding(false), CancellationToken.None);
                                 await File.WriteAllTextAsync(Path.Combine(folder, "INSTALL.cmd"), InstallScript(fileNames, bundleEntries, _adb.Executable, app.Package), new UTF8Encoding(false), CancellationToken.None);
+                                // Same restore for Linux / macOS (backups move between PCs)
+                                string sh = Path.Combine(folder, "INSTALL.sh");
+                                await File.WriteAllTextAsync(sh, InstallShellScript(fileNames, bundleEntries, app.Package), new UTF8Encoding(false), CancellationToken.None);
+                                if (!OperatingSystem.IsWindows())
+                                    try { File.SetUnixFileMode(sh, File.GetUnixFileMode(sh) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute); } catch { }
                                 json["apk_type"] = bundleEntries.Count > 0 ? "split-apks" : fileNames.Count > 1 ? "split" : "single";
                                 if (bundleEntries.Count > 0)
                                     json["apks_entries"] = new JsonArray(bundleEntries.Select(n => (JsonNode?)n).ToArray());
