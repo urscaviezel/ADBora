@@ -41,6 +41,7 @@ internal sealed class PerformancePage : DockPanel, IPage
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private readonly object _lock = new();
+    private readonly List<string> _stderr = new();   // last error lines of the adb processes (diagnostics)
     private readonly Dictionary<string, double> _values = new();
     private Dictionary<string, double> _lastSnapshot = new();
     private readonly Dictionary<string, Queue<double>> _history = new();
@@ -176,6 +177,30 @@ internal sealed class PerformancePage : DockPanel, IPage
     // Start / stop
     // ------------------------------------------------------------------
 
+    /// <summary>Diagnostic (--ui-test perf): monitors like the Start button and returns every value delivered.</summary>
+    internal async Task<string> AutoTestAsync(double seconds)
+    {
+        await DetectHudAsync();
+        await StartMonitoringAsync();
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < seconds; i++)
+        {
+            await Task.Delay(1000);
+            sb.AppendLine($"{i + 1,3}s running={Running} logcat exited={_logcat?.HasExited} sampler exited={_sampler?.HasExited} values={_lastSnapshot.Count}");
+        }
+        lock (_stderr) foreach (string l in _stderr) sb.AppendLine("stderr " + l);
+        sb.AppendLine("status: " + _status.Text);
+        sb.AppendLine("sources: " + _sources.Text);
+        sb.AppendLine($"hud: {_hudPackage ?? "-"} · install offer: {_installKind ?? "-"} · device kind: {_deviceKind ?? "-"}");
+        foreach (PerfMetric m in PerfMetrics.All)
+        {
+            int n = _history.TryGetValue(m.Key, out var q) ? q.Count(v => !double.IsNaN(v)) : 0;
+            string now = _lastSnapshot.TryGetValue(m.Key, out double v) ? m.Format(v) + " " + m.Unit : "–";
+            sb.AppendLine($"{m.Group,-10} {m.Label,-32} {now,-16} samples={n}");
+        }
+        return sb.ToString();
+    }
+
     private async Task StartMonitoringAsync()
     {
         AdbDevice? device = _state.SelectedDevice;
@@ -214,7 +239,7 @@ internal sealed class PerformancePage : DockPanel, IPage
             // stdin stays open (Linux: an inherited /dev/null would end "adb shell" early)
             var p = new Process { StartInfo = adb.CreateStartInfo(args, redirectInput: true), EnableRaisingEvents = true };
             p.OutputDataReceived += (_, e) => { if (e.Data is { Length: > 0 } l) onLine(l); };
-            p.ErrorDataReceived += (_, _) => { };
+            p.ErrorDataReceived += (_, e) => { if (e.Data is { Length: > 0 } l) lock (_stderr) { _stderr.Add($"{args[0]}: {l}"); if (_stderr.Count > 30) _stderr.RemoveAt(0); } };
             p.Start();
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();

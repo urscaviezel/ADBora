@@ -207,6 +207,28 @@ internal sealed class MainWindow : Window
 
         _poll.Start();
 
+        if (Program.UiTest is { Length: >= 4 } p && p[0] == "perf")
+        {
+            try
+            {
+                for (int i = 0; i < 50 && _state.SelectedDevice is not { IsReady: true }; i++) await Task.Delay(200);
+                await Task.Delay(1000);   // first device list update done
+                _tabs.SelectedIndex = 5;
+                string log = await _pages.OfType<PerformancePage>().First().AutoTestAsync(double.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture));
+                File.WriteAllText(p[3] + ".log", log);
+                await Task.Delay(500);
+                using var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize((int)Bounds.Width, (int)Bounds.Height));
+                rtb.Render(this);
+#pragma warning disable CS0618
+                rtb.Save(p[3]);
+#pragma warning restore CS0618
+            }
+            catch (Exception ex) { File.WriteAllText(p[3] + ".log", "ERROR " + ex); }
+            (_pages.OfType<PerformancePage>().First() as IPage).CancelOperation();
+            _closingDone = true;
+            Close();
+            return;
+        }
         if (Program.UiTest is { Length: >= 4 } t && t[0] == "speed")
         {
             await RunSpeedUiTestAsync(double.Parse(t[1], System.Globalization.CultureInfo.InvariantCulture), t[2] == "direct", t[3]);

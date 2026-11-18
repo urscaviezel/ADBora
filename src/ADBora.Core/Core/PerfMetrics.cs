@@ -266,7 +266,10 @@ internal static class PerfMetrics
         "echo \"@M $(grep MemAvailable /proc/meminfo)\"; " +
         "z=''; for t in /sys/class/thermal/thermal_zone*; do v=$(cat $t/temp 2>/dev/null); z=\"$z ${v:-x}\"; done; echo \"@Z$z\"; " +
         "if [ $((i % 2)) -eq 0 ]; then echo \"@B $(dumpsys battery | grep -E '^ *(level|temperature|voltage):' | tr '\\n' ' ')\"; " +
-        "echo \"@H $(dumpsys thermalservice | grep -m1 'Thermal Status')\"; fi; " +
+        // thermalservice once: thermal status and the current HAL temperatures ("value:type:name"), the latter as a
+        // fallback for devices that lock /sys/class/thermal for adb (e.g. Meta Quest 3)
+        "d=$(dumpsys thermalservice 2>/dev/null); echo \"@H $(echo \"$d\" | grep -m1 'Thermal Status')\"; " +
+        "echo \"@T $(echo \"$d\" | sed -n '/Current temperatures from HAL/,/Current cooling devices/p' | grep -o 'mValue=[0-9.-]*, mType=[0-9]*, mName=[^,}]*' | sed 's/mValue=//; s/, mType=/:/; s/, mName=/:/' | tr '\\n' ' ')\"; fi; " +
         "if [ $((i % 3)) -eq 0 ]; then echo \"@A $(dumpsys activity activities | grep -m1 topResumedActivity)\"; " +
         "echo \"@W now=$(date +%s) cur=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) $(grep -E '\\\"(time|battery_current_now_amps|power_wattage|gpu_frequency_MHz)\\\"' " + PfdStatusFile + " 2>/dev/null | tr -d ' \\\",' | tr '\\n' ' ')\"; fi; " +
         "echo @E; i=$((i+1)); sleep 1; done";
@@ -279,6 +282,7 @@ internal static class PerfMetrics
     internal sealed class SystemParser
     {
         private long[]? _lastCpu;
+        private bool _zonesReadable;   // /sys/class/thermal delivered CPU or GPU temperatures
         public string[] ZoneTypes { get; set; } = Array.Empty<string>();
         public string ForegroundApp { get; private set; } = "";
         public double? LastVoltage { get; private set; }
@@ -343,6 +347,30 @@ internal static class PerfMetrics
                         else if (type.StartsWith("gpu")) gpu = double.IsNaN(gpu) ? c : Math.Max(gpu, c);
                         else if (type == "ddr") ddr = c;
                         else if (type.StartsWith("sys-therm") || type.Contains("skin")) board = double.IsNaN(board) ? c : Math.Max(board, c);
+                    }
+                    Put(values, "cpu_temperature_celcius", cpu);
+                    Put(values, "gpu_temperature_celcius", gpu);
+                    Put(values, "ddr_temperature_celcius", ddr);
+                    Put(values, "board_temperature_celcius", board);
+                    if (!double.IsNaN(cpu) || !double.IsNaN(gpu)) _zonesReadable = true;
+                    break;
+                }
+                case 'T':
+                {
+                    // HAL temperatures "value:type:name" – only when the thermal zones are not readable.
+                    // Android types: 0 = CPU, 1 = GPU, 3 = skin (case / board sensors)
+                    if (_zonesReadable) break;
+                    double cpu = double.NaN, gpu = double.NaN, ddr = double.NaN, board = double.NaN;
+                    foreach (string token in body.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string[] f = token.Split(':', 3);
+                        if (f.Length < 3 || !double.TryParse(f[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double c)) continue;
+                        if (c <= 0 || c > 150) continue;
+                        string name = f[2].ToLowerInvariant();
+                        if (name.Contains("ddr")) ddr = double.IsNaN(ddr) ? c : Math.Max(ddr, c);
+                        else if (f[1] == "0") cpu = double.IsNaN(cpu) ? c : Math.Max(cpu, c);
+                        else if (f[1] == "1") gpu = double.IsNaN(gpu) ? c : Math.Max(gpu, c);
+                        else if (f[1] == "3") board = double.IsNaN(board) ? c : Math.Max(board, c);
                     }
                     Put(values, "cpu_temperature_celcius", cpu);
                     Put(values, "gpu_temperature_celcius", gpu);
