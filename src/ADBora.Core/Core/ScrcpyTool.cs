@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Formats.Tar;
+using System.Runtime.InteropServices;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -15,11 +17,18 @@ internal static class ScrcpyTool
 {
     public const string ProjectUrl = "https://github.com/Genymobile/scrcpy";
     private const string ApiLatest = "https://api.github.com/repos/Genymobile/scrcpy/releases/latest";
-    private static readonly Regex AssetName = new(@"^scrcpy-win64-v[\d.]+\.zip$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // Release assets: scrcpy-win64-vX.zip, scrcpy-linux-x86_64-vX.tar.gz
+    private static readonly Regex AssetName = new(
+        Platform.IsWindows ? @"^scrcpy-win64-v[\d.]+\.zip$"
+        : RuntimeInformation.OSArchitecture == Architecture.Arm64 ? @"^scrcpy-linux-aarch64-v[\d.]+\.tar\.gz$"
+        : @"^scrcpy-linux-x86_64-v[\d.]+\.tar\.gz$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static string ExeName => Platform.Exe("scrcpy");
 
     public static string ToolsDirectory => Path.Combine(AppSettings.DataDirectory, "tools");
 
-    /// <summary>Configured path, else a downloaded copy, else scrcpy on PATH.</summary>
+    /// <summary>Configured path, else a downloaded copy, else scrcpy on PATH (Linux: usually /usr/bin/scrcpy).</summary>
     public static string? Find(string configured)
     {
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
@@ -28,7 +37,7 @@ internal static class ScrcpyTool
         {
             if (Directory.Exists(ToolsDirectory))
             {
-                string? local = Directory.EnumerateFiles(ToolsDirectory, "scrcpy.exe", SearchOption.AllDirectories)
+                string? local = Directory.EnumerateFiles(ToolsDirectory, ExeName, SearchOption.AllDirectories)
                     .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
                 if (local is not null) return local;
             }
@@ -38,13 +47,15 @@ internal static class ScrcpyTool
         {
             try
             {
-                string candidate = Path.Combine(dir.Trim('"'), "scrcpy.exe");
+                string candidate = Path.Combine(dir.Trim('"'), ExeName);
                 if (File.Exists(candidate)) return candidate;
             }
             catch { }
         }
         return null;
     }
+
+    private static string OsName => Platform.IsWindows ? "Windows" : "Linux";
 
     public static async Task<string> VersionAsync(string exe)
     {
@@ -69,7 +80,7 @@ internal static class ScrcpyTool
         }
     }
 
-    /// <summary>Downloads the latest Windows release from GitHub and returns the path of scrcpy.exe.</summary>
+    /// <summary>Downloads the latest release for this OS from GitHub and returns the path of the scrcpy program.</summary>
     public static async Task<string> DownloadLatestAsync(IProgress<(long Done, long Total)> progress, Action<string> log, CancellationToken token)
     {
         using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
@@ -80,7 +91,7 @@ internal static class ScrcpyTool
                         ?? throw new InvalidDataException("GitHub: empty response");
         string tag = root["tag_name"]?.GetValue<string>() ?? "?";
         JsonNode asset = (root["assets"] as JsonArray)?.FirstOrDefault(a => AssetName.IsMatch(a?["name"]?.GetValue<string>() ?? ""))
-                         ?? throw new InvalidDataException(Loc.T($"Kein Windows-Paket in scrcpy {tag} gefunden.", $"No Windows package found in scrcpy {tag}."));
+                         ?? throw new InvalidDataException(Loc.T($"Kein passendes Paket ({OsName}) in scrcpy {tag} gefunden.", $"No matching package ({OsName}) found in scrcpy {tag}."));
         string name = asset["name"]!.GetValue<string>();
         string url = asset["browser_download_url"]!.GetValue<string>();
         long size = asset["size"]?.GetValue<long>() ?? 0;
@@ -118,12 +129,19 @@ internal static class ScrcpyTool
                 log(Loc.T("Prüfsumme (SHA-256) in Ordnung.", "Checksum (SHA-256) OK."));
             }
 
-            string target = Path.Combine(ToolsDirectory, Path.GetFileNameWithoutExtension(name));
+            string target = Path.Combine(ToolsDirectory, name.Replace(".tar.gz", "", StringComparison.OrdinalIgnoreCase).Replace(".zip", "", StringComparison.OrdinalIgnoreCase));
             if (Directory.Exists(target)) Directory.Delete(target, true);
             Directory.CreateDirectory(target);
-            ZipFile.ExtractToDirectory(zipPath, target);
-            string exe = Directory.EnumerateFiles(target, "scrcpy.exe", SearchOption.AllDirectories).FirstOrDefault()
-                         ?? throw new InvalidDataException(Loc.T("scrcpy.exe fehlt im Paket.", "scrcpy.exe is missing in the package."));
+            if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                ZipFile.ExtractToDirectory(zipPath, target);
+            else
+            {
+                await using FileStream file = File.OpenRead(zipPath);
+                await using var gz = new GZipStream(file, CompressionMode.Decompress);
+                await TarFile.ExtractToDirectoryAsync(gz, target, overwriteFiles: true, token); // keeps the executable bits
+            }
+            string exe = Directory.EnumerateFiles(target, ExeName, SearchOption.AllDirectories).FirstOrDefault()
+                         ?? throw new InvalidDataException(Loc.T($"{ExeName} fehlt im Paket.", $"{ExeName} is missing in the package."));
             log(Loc.T($"scrcpy {tag} installiert: {exe}", $"scrcpy {tag} installed: {exe}"));
             return exe;
         }

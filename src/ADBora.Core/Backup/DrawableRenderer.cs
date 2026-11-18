@@ -1,7 +1,6 @@
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO.Compression;
+using SkiaSharp;
 
 namespace AdbTool.Backup;
 
@@ -34,20 +33,18 @@ internal static class DrawableRenderer
     {
         try
         {
-            using Bitmap? bmp = RenderXml(zip, table, xml, size, 0, icon: true);
+            using SKBitmap? bmp = RenderXml(zip, table, xml, size, 0, icon: true);
             if (bmp is null || IsEmpty(bmp)) return null;
-            using var ms = new MemoryStream();
-            bmp.Save(ms, ImageFormat.Png);
-            return ms.ToArray();
+            return ImageLoader.EncodePng(bmp);
         }
         catch { return null; }
     }
 
-    private static bool IsEmpty(Bitmap bmp)
+    private static bool IsEmpty(SKBitmap bmp)
     {
         for (int y = 0; y < bmp.Height; y += Math.Max(1, bmp.Height / 24))
             for (int x = 0; x < bmp.Width; x += Math.Max(1, bmp.Width / 24))
-                if (bmp.GetPixel(x, y).A > 8) return false;
+                if (bmp.GetPixel(x, y).Alpha > 8) return false;
         return true;
     }
 
@@ -69,7 +66,7 @@ internal static class DrawableRenderer
         return root;
     }
 
-    private static Bitmap? RenderXml(ZipArchive zip, ResourceTable table, byte[] xml, int size, int depth, bool icon = false)
+    private static SKBitmap? RenderXml(ZipArchive zip, ResourceTable table, byte[] xml, int size, int depth, bool icon = false)
     {
         Node? root = Tree(xml);
         if (root is null) return null;
@@ -86,7 +83,7 @@ internal static class DrawableRenderer
     }
 
     /// <summary>Renders a drawable reference (raster, XML drawable or colour) at the given size.</summary>
-    private static Bitmap? RenderReference(ZipArchive zip, ResourceTable table, XmlAttribute? attr, int size, int depth)
+    private static SKBitmap? RenderReference(ZipArchive zip, ResourceTable table, XmlAttribute? attr, int size, int depth)
     {
         if (attr is null || depth > 6) return null;
         if (attr.IsColor) return Solid(Argb(attr.Data), size);
@@ -104,12 +101,11 @@ internal static class DrawableRenderer
         {
             byte[]? data = ReadEntry(zip, f.Path);
             if (data is null) continue;
-            using Bitmap? decoded = ImageLoader.Decode(data);
+            using SKBitmap? decoded = ImageLoader.Decode(data);
             if (decoded is null) continue;
-            var scaled = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-            using Graphics g = Graphics.FromImage(scaled);
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.DrawImage(decoded, 0, 0, size, size);
+            SKBitmap scaled = ImageLoader.NewBitmap(size, size);
+            using var g = new SKCanvas(scaled);
+            ImageLoader.Draw(g, decoded, new SKRect(0, 0, size, size));
             return scaled;
         }
         foreach (var f in files.Where(f => f.Path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
@@ -120,19 +116,18 @@ internal static class DrawableRenderer
         return null;
     }
 
-    private static Bitmap Solid(Color color, int size)
+    private static SKBitmap Solid(SKColor color, int size)
     {
-        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-        using Graphics g = Graphics.FromImage(bmp);
-        g.Clear(color);
+        SKBitmap bmp = ImageLoader.NewBitmap(size, size);
+        bmp.Erase(color);
         return bmp;
     }
 
-    private static Bitmap? RenderAdaptive(ZipArchive zip, ResourceTable table, Node root, int size, int depth)
+    private static SKBitmap? RenderAdaptive(ZipArchive zip, ResourceTable table, Node root, int size, int depth)
     {
         // Layers are 108dp, the visible area the inner 72dp – render the full layers, then crop and round
         int full = (int)Math.Round(size * 108.0 / 72.0);
-        Bitmap? Layer(string name)
+        SKBitmap? Layer(string name)
         {
             Node? n = root.Children.FirstOrDefault(c => c.Element.Name == name);
             if (n is null) return null;
@@ -141,35 +136,31 @@ internal static class DrawableRenderer
             // inline drawable as child element is not supported (rare)
             return null;
         }
-        using Bitmap? bg = Layer("background");
-        using Bitmap? fg = Layer("foreground");
+        using SKBitmap? bg = Layer("background");
+        using SKBitmap? fg = Layer("foreground");
         if (fg is null && bg is null) return null;
-        var output = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-        using Graphics g = Graphics.FromImage(output);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        g.Clear(Color.Transparent);
-        using GraphicsPath mask = UI.Theme.RoundedRect(new Rectangle(0, 0, size - 1, size - 1), size / 5);
-        g.SetClip(mask);
+        SKBitmap output = ImageLoader.NewBitmap(size, size);
+        using var g = new SKCanvas(output);
+        ImageLoader.ClipIcon(g, size);
         int offset = (full - size) / 2;
-        var src = new Rectangle(offset, offset, size, size);
-        if (bg is not null) g.DrawImage(bg, new Rectangle(0, 0, size, size), src, GraphicsUnit.Pixel);
-        if (fg is not null) g.DrawImage(fg, new Rectangle(0, 0, size, size), src, GraphicsUnit.Pixel);
+        var src = SKRect.Create(offset, offset, size, size);
+        var dest = new SKRect(0, 0, size, size);
+        if (bg is not null) ImageLoader.Draw(g, bg, dest, src);
+        if (fg is not null) ImageLoader.Draw(g, fg, dest, src);
         return output;
     }
 
-    private static Bitmap? RenderLayers(ZipArchive zip, ResourceTable table, Node root, int size, int depth)
+    private static SKBitmap? RenderLayers(ZipArchive zip, ResourceTable table, Node root, int size, int depth)
     {
-        var output = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        SKBitmap output = ImageLoader.NewBitmap(size, size);
         bool any = false;
-        using (Graphics g = Graphics.FromImage(output))
+        using (var g = new SKCanvas(output))
         {
-            g.Clear(Color.Transparent);
             foreach (Node item in root.Children.Where(c => c.Element.Name == "item"))
             {
-                using Bitmap? layer = RenderReference(zip, table, item.Element.Attr(ADrawable, "drawable"), size, depth + 1);
+                using SKBitmap? layer = RenderReference(zip, table, item.Element.Attr(ADrawable, "drawable"), size, depth + 1);
                 if (layer is null) continue;
-                g.DrawImage(layer, 0, 0, size, size);
+                ImageLoader.Draw(g, layer, new SKRect(0, 0, size, size));
                 any = true;
             }
         }
@@ -178,79 +169,76 @@ internal static class DrawableRenderer
         return null;
     }
 
-    private static Bitmap? RenderInset(ZipArchive zip, ResourceTable table, Node root, int size, int depth) =>
+    private static SKBitmap? RenderInset(ZipArchive zip, ResourceTable table, Node root, int size, int depth) =>
         RenderReference(zip, table, root.Element.Attr(ADrawable, "drawable"), size, depth + 1);
 
-    private static Bitmap? RenderShape(ZipArchive zip, ResourceTable table, Node root, int size)
+    private static SKBitmap? RenderShape(ZipArchive zip, ResourceTable table, Node root, int size)
     {
         Node? solid = root.Children.FirstOrDefault(c => c.Element.Name == "solid");
-        Color? c = solid is null ? null : ColorOf(table, solid.Element.Attr(AColor, "color"));
+        SKColor? c = solid is null ? null : ColorOf(table, solid.Element.Attr(AColor, "color"));
         return c is { } color ? Solid(color, size) : null;
     }
 
     // ------------------------------------------------------------------ vector
 
-    private static Bitmap? RenderVector(ZipArchive zip, ResourceTable table, Node root, int size)
+    private static SKBitmap? RenderVector(ZipArchive zip, ResourceTable table, Node root, int size)
     {
         float vw = Float(root.Element.Attr(AViewportWidth, "viewportWidth"), 24f);
         float vh = Float(root.Element.Attr(AViewportHeight, "viewportHeight"), 24f);
         if (vw <= 0 || vh <= 0) return null;
-        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-        using Graphics g = Graphics.FromImage(bmp);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-        g.Clear(Color.Transparent);
+        SKBitmap bmp = ImageLoader.NewBitmap(size, size);
+        using var g = new SKCanvas(bmp);
         float scale = Math.Min(size / vw, size / vh);
-        using var m = new Matrix();
-        m.Translate((size - vw * scale) / 2f, (size - vh * scale) / 2f);
-        m.Scale(scale, scale);
+        SKMatrix m = SKMatrix.CreateTranslation((size - vw * scale) / 2f, (size - vh * scale) / 2f)
+            .PreConcat(SKMatrix.CreateScale(scale, scale));
         float alpha = Float(root.Element.Attr(AAlpha, "alpha"), 1f);
         DrawChildren(g, table, root, m, alpha);
         return bmp;
     }
 
-    private static void DrawChildren(Graphics g, ResourceTable table, Node parent, Matrix transform, float alpha)
+    private static void DrawChildren(SKCanvas g, ResourceTable table, Node parent, SKMatrix transform, float alpha)
     {
         foreach (Node child in parent.Children)
         {
             XmlElement e = child.Element;
             if (e.Name == "group")
             {
-                using Matrix m = transform.Clone();
                 float px = Float(e.Attr(APivotX, "pivotX"), 0), py = Float(e.Attr(APivotY, "pivotY"), 0);
-                m.Translate(Float(e.Attr(ATranslateX, "translateX"), 0) + px, Float(e.Attr(ATranslateY, "translateY"), 0) + py);
-                m.Rotate(Float(e.Attr(ARotation, "rotation"), 0));
-                m.Scale(Float(e.Attr(AScaleX, "scaleX"), 1), Float(e.Attr(AScaleY, "scaleY"), 1));
-                m.Translate(-px, -py);
+                SKMatrix m = transform
+                    .PreConcat(SKMatrix.CreateTranslation(Float(e.Attr(ATranslateX, "translateX"), 0) + px, Float(e.Attr(ATranslateY, "translateY"), 0) + py))
+                    .PreConcat(SKMatrix.CreateRotationDegrees(Float(e.Attr(ARotation, "rotation"), 0)))
+                    .PreConcat(SKMatrix.CreateScale(Float(e.Attr(AScaleX, "scaleX"), 1), Float(e.Attr(AScaleY, "scaleY"), 1)))
+                    .PreConcat(SKMatrix.CreateTranslation(-px, -py));
                 DrawChildren(g, table, child, m, alpha);
             }
             else if (e.Name == "path")
             {
                 string? data = e.Attr(APathData, "pathData")?.AsString(table);
                 if (string.IsNullOrWhiteSpace(data)) continue;
-                using GraphicsPath? path = PathParser.Parse(data);
+                using SKPath? path = PathParser.Parse(data);
                 if (path is null) continue;
-                path.FillMode = (int)Float(e.Attr(AFillType, "fillType"), 0) == 1 ? FillMode.Alternate : FillMode.Winding;
+                path.FillType = (int)Float(e.Attr(AFillType, "fillType"), 0) == 1 ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
                 path.Transform(transform);
 
                 float fillAlpha = Float(e.Attr(AFillAlpha, "fillAlpha"), 1f) * alpha;
-                using (Brush? fill = BrushFor(table, child, e.Attr(AFillColor, "fillColor"), "fillColor", transform, fillAlpha))
-                    if (fill is not null) g.FillPath(fill, path);
+                using (SKPaint? fill = PaintFor(table, child, e.Attr(AFillColor, "fillColor"), "fillColor", transform, fillAlpha))
+                    if (fill is not null) g.DrawPath(path, fill);
 
                 float width = Float(e.Attr(AStrokeWidth, "strokeWidth"), 0);
                 if (width > 0)
                 {
                     float strokeAlpha = Float(e.Attr(AStrokeAlpha, "strokeAlpha"), 1f) * alpha;
-                    using Brush? strokeBrush = BrushFor(table, child, e.Attr(AStrokeColor, "strokeColor"), "strokeColor", transform, strokeAlpha);
-                    if (strokeBrush is not null)
+                    using SKPaint? pen = PaintFor(table, child, e.Attr(AStrokeColor, "strokeColor"), "strokeColor", transform, strokeAlpha);
+                    if (pen is not null)
                     {
-                        float scale = (float)Math.Sqrt(Math.Abs(transform.Elements[0] * transform.Elements[3] - transform.Elements[1] * transform.Elements[2]));
-                        using var pen = new Pen(strokeBrush, width * scale);
+                        float scale = (float)Math.Sqrt(Math.Abs(transform.ScaleX * transform.ScaleY - transform.SkewX * transform.SkewY));
+                        pen.Style = SKPaintStyle.Stroke;
+                        pen.StrokeWidth = width * scale;
                         int cap = (int)Float(e.Attr(AStrokeLineCap, "strokeLineCap"), 0);
-                        pen.StartCap = pen.EndCap = cap switch { 1 => LineCap.Round, 2 => LineCap.Square, _ => LineCap.Flat };
+                        pen.StrokeCap = cap switch { 1 => SKStrokeCap.Round, 2 => SKStrokeCap.Square, _ => SKStrokeCap.Butt };
                         int join = (int)Float(e.Attr(AStrokeLineJoin, "strokeLineJoin"), 0);
-                        pen.LineJoin = join switch { 1 => LineJoin.Round, 2 => LineJoin.Bevel, _ => LineJoin.Miter };
-                        g.DrawPath(pen, path);
+                        pen.StrokeJoin = join switch { 1 => SKStrokeJoin.Round, 2 => SKStrokeJoin.Bevel, _ => SKStrokeJoin.Miter };
+                        g.DrawPath(path, pen);
                     }
                 }
             }
@@ -261,11 +249,13 @@ internal static class DrawableRenderer
         }
     }
 
+    private static SKPaint SolidPaint(SKColor c) => new() { IsAntialias = true, Style = SKPaintStyle.Fill, Color = c };
+
     /// <summary>Solid colour (attribute, colour resource) or an inline &lt;aapt:attr&gt; gradient.</summary>
-    private static Brush? BrushFor(ResourceTable table, Node pathNode, XmlAttribute? attr, string name, Matrix transform, float alpha)
+    private static SKPaint? PaintFor(ResourceTable table, Node pathNode, XmlAttribute? attr, string name, SKMatrix transform, float alpha)
     {
         if (ColorOf(table, attr) is { } c)
-            return c.A == 0 ? null : new SolidBrush(WithAlpha(c, alpha));
+            return c.Alpha == 0 ? null : SolidPaint(WithAlpha(c, alpha));
 
         Node? aapt = pathNode.Children.FirstOrDefault(n => n.Element.Name == "attr" &&
             (n.Element.Attributes.FirstOrDefault(a => a.Name == "name")?.AsString(table) ?? "").EndsWith(name));
@@ -283,38 +273,30 @@ internal static class DrawableRenderer
             if (ColorOf(table, ge.Attr(AEndColor, "endColor")) is { } s2) stops.Add((1f, s2));
         }
         if (stops.Count == 0) return null;
-        if (stops.Count == 1) return new SolidBrush(WithAlpha(stops[0].Color, alpha));
+        if (stops.Count == 1) return SolidPaint(WithAlpha(stops[0].Color, alpha));
 
         int type = (int)Float(ge.Attributes.FirstOrDefault(a => a.Name == "type"), 0);
         if (type == 0)   // linear
         {
-            var pts = new[]
-            {
-                new PointF(Float(ge.Attr(AStartX, "startX"), 0), Float(ge.Attr(AStartY, "startY"), 0)),
-                new PointF(Float(ge.Attr(AEndX, "endX"), 1), Float(ge.Attr(AEndY, "endY"), 1))
-            };
-            transform.TransformPoints(pts);
-            if (pts[0] == pts[1]) return new SolidBrush(WithAlpha(stops[^1].Color, alpha));
-            var brush = new LinearGradientBrush(pts[0], pts[1], stops[0].Color, stops[^1].Color) { WrapMode = WrapMode.TileFlipX };
-            var blend = new ColorBlend(stops.Count + 2);
-            var colors = new List<Color> { WithAlpha(stops[0].Color, alpha) };
-            var positions = new List<float> { 0f };
+            SKPoint p0 = transform.MapPoint(Float(ge.Attr(AStartX, "startX"), 0), Float(ge.Attr(AStartY, "startY"), 0));
+            SKPoint p1 = transform.MapPoint(Float(ge.Attr(AEndX, "endX"), 1), Float(ge.Attr(AEndY, "endY"), 1));
+            if (p0 == p1) return SolidPaint(WithAlpha(stops[^1].Color, alpha));
+            var colors = new List<SKColor>();
+            var positions = new List<float>();
             foreach (var s in stops) { colors.Add(WithAlpha(s.Color, alpha)); positions.Add(Math.Clamp(s.Offset, 0f, 1f)); }
-            colors.Add(WithAlpha(stops[^1].Color, alpha)); positions.Add(1f);
             for (int i = 1; i < positions.Count; i++) if (positions[i] < positions[i - 1]) positions[i] = positions[i - 1];
-            blend.Colors = colors.ToArray();
-            blend.Positions = positions.ToArray();
-            brush.InterpolationColors = blend;
-            return brush;
+            SKPaint paint = SolidPaint(SKColors.Black);
+            paint.Shader = SKShader.CreateLinearGradient(p0, p1, colors.ToArray(), positions.ToArray(), SKShaderTileMode.Clamp);
+            return paint;
         }
         // radial / sweep: average colour is a good enough approximation for a small icon
         int r = 0, gr = 0, b = 0, a = 0;
-        foreach (var s in stops) { r += s.Color.R; gr += s.Color.G; b += s.Color.B; a += s.Color.A; }
+        foreach (var s in stops) { r += s.Color.Red; gr += s.Color.Green; b += s.Color.Blue; a += s.Color.Alpha; }
         int n = stops.Count;
-        return new SolidBrush(WithAlpha(Color.FromArgb(a / n, r / n, gr / n, b / n), alpha));
+        return SolidPaint(WithAlpha(new SKColor((byte)(r / n), (byte)(gr / n), (byte)(b / n), (byte)(a / n)), alpha));
     }
 
-    private static Color? ColorOf(ResourceTable table, XmlAttribute? attr)
+    private static SKColor? ColorOf(ResourceTable table, XmlAttribute? attr)
     {
         if (attr is null) return null;
         if (attr.IsColor) return Argb(attr.Data);
@@ -323,15 +305,13 @@ internal static class DrawableRenderer
             var v = table.ResolveAll(attr.Data).FirstOrDefault(x => x.Value.IsColor);
             if (v.Value is not null) return Argb(v.Value.Data);
         }
-        if (attr.RawString is { } s && s.StartsWith('#'))
-        {
-            try { return ColorTranslator.FromHtml(s.Length == 9 ? "#" + s[1..] : s); } catch { }
-        }
+        if (attr.RawString is { } s && s.StartsWith('#') && SKColor.TryParse(s, out SKColor parsed))
+            return parsed;   // #RGB, #ARGB, #RRGGBB, #AARRGGBB – same order as Android
         return null;
     }
 
-    private static Color Argb(uint data) => Color.FromArgb(unchecked((int)data));
-    private static Color WithAlpha(Color c, float alpha) => Color.FromArgb((int)Math.Clamp(c.A * alpha, 0, 255), c.R, c.G, c.B);
+    internal static SKColor Argb(uint data) => new(data);
+    private static SKColor WithAlpha(SKColor c, float alpha) => c.WithAlpha((byte)Math.Clamp(c.Alpha * alpha, 0, 255));
 
     private static float Float(XmlAttribute? attr, float fallback)
     {
@@ -360,12 +340,12 @@ internal static class DrawableRenderer
     }
 }
 
-/// <summary>SVG/Android path data ("M0,0h108v108h-108z", arcs included) → GraphicsPath.</summary>
+/// <summary>SVG/Android path data ("M0,0h108v108h-108z", arcs included) → SKPath.</summary>
 internal static class PathParser
 {
-    public static GraphicsPath? Parse(string data)
+    public static SKPath? Parse(string data)
     {
-        var path = new GraphicsPath();
+        var path = new SKPath();
         int i = 0;
         char cmd = ' ';
         float cx = 0, cy = 0, sx = 0, sy = 0;     // current point, sub-path start
@@ -412,8 +392,8 @@ internal static class PathParser
                     {
                         float x = Num(), y = Num();
                         if (rel) { x += cx; y += cy; }
-                        if (open) path.CloseFigure();   // Android keeps sub-paths; a new M starts a new figure
-                        path.StartFigure();
+                        if (open) path.Close();         // Android keeps sub-paths; a new M starts a new figure
+                        path.MoveTo(x, y);
                         cx = sx = x; cy = sy = y; open = true;
                         cmd = rel ? 'l' : 'L';          // following pairs are line-tos
                         break;
@@ -422,26 +402,26 @@ internal static class PathParser
                     {
                         float x = Num(), y = Num();
                         if (rel) { x += cx; y += cy; }
-                        path.AddLine(cx, cy, x, y); cx = x; cy = y;
+                        path.LineTo(x, y); cx = x; cy = y;
                         break;
                     }
                     case 'H':
                     {
                         float x = Num(); if (rel) x += cx;
-                        path.AddLine(cx, cy, x, cy); cx = x;
+                        path.LineTo(x, cy); cx = x;
                         break;
                     }
                     case 'V':
                     {
                         float y = Num(); if (rel) y += cy;
-                        path.AddLine(cx, cy, cx, y); cy = y;
+                        path.LineTo(cx, y); cy = y;
                         break;
                     }
                     case 'C':
                     {
                         float x1 = Num(), y1 = Num(), x2 = Num(), y2 = Num(), x = Num(), y = Num();
                         if (rel) { x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy; }
-                        path.AddBezier(cx, cy, x1, y1, x2, y2, x, y);
+                        path.CubicTo(x1, y1, x2, y2, x, y);
                         lcx = x2; lcy = y2; cx = x; cy = y;
                         break;
                     }
@@ -451,7 +431,7 @@ internal static class PathParser
                         if (rel) { x2 += cx; y2 += cy; x += cx; y += cy; }
                         float x1 = cx, y1 = cy;
                         if (char.ToUpperInvariant(last) is 'C' or 'S') { x1 = 2 * cx - lcx; y1 = 2 * cy - lcy; }
-                        path.AddBezier(cx, cy, x1, y1, x2, y2, x, y);
+                        path.CubicTo(x1, y1, x2, y2, x, y);
                         lcx = x2; lcy = y2; cx = x; cy = y;
                         break;
                     }
@@ -482,7 +462,7 @@ internal static class PathParser
                         break;
                     }
                     case 'Z':
-                        path.CloseFigure();
+                        path.Close();
                         cx = sx; cy = sy; open = false;
                         break;
                     default:
@@ -499,13 +479,13 @@ internal static class PathParser
         return path;
     }
 
-    private static void Quad(GraphicsPath path, float x0, float y0, float qx, float qy, float x, float y) =>
-        path.AddBezier(x0, y0, x0 + 2f / 3 * (qx - x0), y0 + 2f / 3 * (qy - y0), x + 2f / 3 * (qx - x), y + 2f / 3 * (qy - y), x, y);
+    private static void Quad(SKPath path, float x0, float y0, float qx, float qy, float x, float y) =>
+        path.QuadTo(qx, qy, x, y);
 
     /// <summary>Endpoint arc (SVG) as cubic Béziers.</summary>
-    private static void Arc(GraphicsPath path, float x1, float y1, float rx, float ry, float angle, bool large, bool sweep, float x2, float y2)
+    private static void Arc(SKPath path, float x1, float y1, float rx, float ry, float angle, bool large, bool sweep, float x2, float y2)
     {
-        if (rx == 0 || ry == 0 || (x1 == x2 && y1 == y2)) { path.AddLine(x1, y1, x2, y2); return; }
+        if (rx == 0 || ry == 0 || (x1 == x2 && y1 == y2)) { path.LineTo(x2, y2); return; }
         double phi = angle * Math.PI / 180, cos = Math.Cos(phi), sin = Math.Sin(phi);
         double dx = (x1 - x2) / 2.0, dy = (y1 - y2) / 2.0;
         double x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
@@ -537,7 +517,7 @@ internal static class PathParser
             double ex1 = c1 - k * s1, ey1 = s1 + k * c1, ex2 = c2 + k * s2, ey2 = s2 - k * c2;
             (double X, double Y) Map(double ux, double uy) => (ccx + arx * ux * cos - ary * uy * sin, ccy + arx * ux * sin + ary * uy * cos);
             var p1 = Map(ex1, ey1); var p2 = Map(ex2, ey2); var p3 = Map(c2, s2);
-            path.AddBezier((float)px, (float)py, (float)p1.X, (float)p1.Y, (float)p2.X, (float)p2.Y, (float)p3.X, (float)p3.Y);
+            path.CubicTo((float)p1.X, (float)p1.Y, (float)p2.X, (float)p2.Y, (float)p3.X, (float)p3.Y);
             px = p3.X; py = p3.Y; t += delta;
         }
     }

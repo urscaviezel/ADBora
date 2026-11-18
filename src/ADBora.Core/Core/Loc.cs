@@ -64,13 +64,6 @@ internal static class Loc
         LanguageChanged?.Invoke();
     }
 
-    /// <summary>Binds Control.Text.</summary>
-    public static TControl Bind<TControl>(TControl control, string de, string en) where TControl : Control
-    {
-        Bind(control, value => control.Text = value, de, en);
-        return control;
-    }
-
     /// <summary>Binds any setter (placeholder texts, column headers, tooltips …).</summary>
     public static void Bind(object owner, Action<string> apply, string de, string en)
     {

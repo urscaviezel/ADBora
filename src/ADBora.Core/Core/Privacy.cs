@@ -30,17 +30,31 @@ internal static class Privacy
         return Cut(serial);
     }
 
-    private static readonly string Profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\');
+    private static readonly string Profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\', '/');
 
-    /// <summary>Replaces the user profile folder in a text (paths, log lines) with %USERPROFILE%.</summary>
+    /// <summary>Placeholder for the user folder: %USERPROFILE% on Windows, ~ on Linux.</summary>
+    private static string Placeholder => OperatingSystem.IsWindows() ? "%USERPROFILE%" : "~";
+
+    /// <summary>Replaces the user profile folder in a text (paths, log lines) with %USERPROFILE% (Windows) or ~ (Linux).</summary>
     public static string MaskPaths(string text)
     {
         if (!_hide || string.IsNullOrEmpty(text) || Profile.Length < 4) return text;
-        return text.Replace(Profile, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
+        return OperatingSystem.IsWindows()
+            ? text.Replace(Profile, Placeholder, StringComparison.OrdinalIgnoreCase)
+            : Regex.Replace(text, Regex.Escape(Profile) + "(?=/|$|[\\s\"'),;:])", Placeholder);   // case-sensitive, whole folder name only
+    }
+
+    /// <summary>Expands %VARIABLES% and a leading ~ (Linux).</summary>
+    public static string Expand(string path)
+    {
+        path = Environment.ExpandEnvironmentVariables(path);
+        if (!OperatingSystem.IsWindows() && (path == "~" || path.StartsWith("~/")))
+            path = Profile + path[1..];
+        return path;
     }
 
     /// <summary>Text box with a path: show masked or full, depending on the setting.</summary>
-    public static string ShowPath(string path) => _hide ? MaskPaths(Environment.ExpandEnvironmentVariables(path)) : Environment.ExpandEnvironmentVariables(path);
+    public static string ShowPath(string path) => _hide ? MaskPaths(Expand(path)) : Expand(path);
 
     private static string Cut(string s) => s.Length <= 6 ? "••••" : s[..3] + "••••" + s[^2..];
 }

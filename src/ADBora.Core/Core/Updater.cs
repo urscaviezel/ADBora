@@ -215,7 +215,7 @@ internal static class Updater
     /// </summary>
     public static void StartInstall(string package)
     {
-        string exe = Environment.ProcessPath ?? Application.ExecutablePath;
+        string exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "ADBora");
 
         if (Kind == InstallKind.Installed)
         {

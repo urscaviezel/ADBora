@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using AdbTool.Core;
+using SkiaSharp;
 
 namespace AdbTool.Cast;
 
@@ -15,7 +16,7 @@ internal sealed class CastSession
     private readonly BlockingCollection<byte[]> _queue = new(new ConcurrentQueue<byte[]>(), 240);
     private readonly object _recordGate = new();
     private H264Decoder? _decoder;
-    private CastViewer? _viewer;
+    private ICastViewer? _viewer;
     private FileStream? _record;
     private MkvWriter? _mkv;
     private Thread? _thread;
@@ -58,10 +59,10 @@ internal sealed class CastSession
     /// <summary>Microphone mixed into the audio.</summary>
     public bool MicActive => _mic is not null;
     public string? RecordFile { get; private set; }
-    public CastViewer? Viewer => _viewer;
+    public ICastViewer? Viewer => _viewer;
 
-    /// <summary>Must be called on the UI thread.</summary>
-    public async Task StartAsync(string title, bool onTop, string? recordFile, IWin32Window? owner, bool audio)
+    /// <summary>Must be called on the UI thread. <paramref name="viewer"/> is created (not yet shown) by the UI.</summary>
+    public async Task StartAsync(ICastViewer viewer, string? recordFile, bool audio)
     {
         // Audio is always requested, so playback can be switched on and off while streaming
         Muted = !audio;
@@ -83,13 +84,13 @@ internal sealed class CastSession
         if (!H264Decoder.TryLoad(_ffmpegFolder, out string error))
             throw new InvalidOperationException(Loc.T("FFmpeg-Bibliotheken aus dem scrcpy-Paket konnten nicht geladen werden: ", "FFmpeg libraries from the scrcpy package could not be loaded: ") + error);
         _decoder = new H264Decoder();
-        _viewer = new CastViewer(title) { TopMost = onTop };
+        _viewer = viewer;
         _viewer.Recycle += b => _decoder?.Recycle(b);
         _viewer.ScreenshotRequested += () => ScreenshotRequested?.Invoke();
         _viewer.MuteToggleRequested += () => MuteToggleRequested?.Invoke();
         _viewer.VolumeStepRequested += d => VolumeStepRequested?.Invoke(d);
-        _viewer.FormClosed += (_, _) => { if (Volatile.Read(ref _stopped) == 0) _ = StopAsync(); };
-        _decoder.FrameDecoded += b => { if (_viewer is { IsDisposed: false } v) v.Push(b); else b.Dispose(); };
+        _viewer.Closed += () => { if (Volatile.Read(ref _stopped) == 0) _ = StopAsync(); };
+        _decoder.FrameDecoded += b => { if (_viewer is { IsClosed: false } v) v.Push(b); else b.Dispose(); };
 
         if (recordFile is not null)
         {
@@ -114,7 +115,7 @@ internal sealed class CastSession
         };
         _thread = new Thread(DecodeLoop) { IsBackground = true, Name = "ADBora cast decoder" };
         _thread.Start();
-        _viewer.Show(owner);
+        _viewer.Show();
         try
         {
             await _source.StartAsync();
@@ -256,11 +257,11 @@ internal sealed class CastSession
             _aac?.Dispose(); _aac = null;
         }
         _source.Dispose();
-        if (_viewer is { IsDisposed: false } v)
+        if (_viewer is { IsClosed: false } v)
         {
-            try { if (v.InvokeRequired) v.BeginInvoke(new Action(v.Close)); else v.Close(); } catch { }
+            try { v.Close(); } catch { }
         }
     }
 
-    public Bitmap? Snapshot() => _viewer?.Snapshot();
+    public SKBitmap? Snapshot() => _viewer?.Snapshot();
 }

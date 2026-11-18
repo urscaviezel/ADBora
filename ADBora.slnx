@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ADBora.App/ADBora.App.csproj" />
+    <Project Path="src/ADBora.Core/ADBora.Core.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/LangExtract/LangExtract.csproj" />
+  </Folder>
+</Solution>

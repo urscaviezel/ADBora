@@ -1,6 +1,7 @@
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Text;
+using AdbTool.Core;
+using SkiaSharp;
 
 namespace AdbTool.Cast;
 
@@ -36,30 +37,30 @@ internal sealed unsafe class H264Decoder : IDisposable
     private readonly MemoryStream _au = new();
     private bool _auHasSlice;
     private SpsInfo? _color;
-    private Bitmap? _spare;
+    private SKBitmap? _spare;
     private volatile bool _disposed;
 
     /// <summary>Called on the decoding thread for every finished picture. The receiver owns the bitmap.</summary>
-    public event Action<Bitmap>? FrameDecoded;
+    public event Action<SKBitmap>? FrameDecoded;
     /// <summary>Every complete access unit (Annex-B) after decoding, e.g. for recording.</summary>
     public event Action<byte[], int>? AccessUnit;
 
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    /// <summary>Folder that contains avcodec-*.dll (the scrcpy folder).</summary>
+    /// <summary>Windows: folder that contains avcodec-*.dll (the scrcpy folder). Linux: system FFmpeg (folder optional).</summary>
     public static bool TryLoad(string folder, out string error)
     {
         error = "";
         if (_loadedFrom is not null) return true;
         try
         {
-            string? Find(string pattern) => Directory.EnumerateFiles(folder, pattern).OrderByDescending(f => f).FirstOrDefault();
-            string avutil = Find("avutil-*.dll") ?? throw new FileNotFoundException("avutil-*.dll");
-            string avcodec = Find("avcodec-*.dll") ?? throw new FileNotFoundException("avcodec-*.dll");
+            // Windows: the DLLs of the scrcpy package; Linux: the system FFmpeg (libavcodec.so.N)
+            string avutil = Platform.FindLibrary("avutil", folder) ?? throw new FileNotFoundException(Platform.IsWindows ? "avutil-*.dll" : "libavutil.so (FFmpeg)");
+            string avcodec = Platform.FindLibrary("avcodec", folder) ?? throw new FileNotFoundException(Platform.IsWindows ? "avcodec-*.dll" : "libavcodec.so (FFmpeg)");
             // Load the dependencies first so avcodec finds them by name
             IntPtr util = NativeLibrary.Load(avutil);
-            if (Find("swresample-*.dll") is { } swr) NativeLibrary.Load(swr);
+            if (Platform.FindLibrary("swresample", folder) is { } swr) NativeLibrary.Load(swr);
             IntPtr codec = NativeLibrary.Load(avcodec);
 
             _findDecoder = (delegate* unmanaged[Cdecl]<int, IntPtr>)NativeLibrary.GetExport(codec, "avcodec_find_decoder");
@@ -197,14 +198,12 @@ internal sealed unsafe class H264Decoder : IDisposable
         int cgv = hd ? (full ? 479 : 546) : (full ? 731 : 832);
         int cbu = hd ? (full ? 1900 : 2163) : (full ? 1815 : 2066);
 
-        Bitmap? spare = Interlocked.Exchange(ref _spare, null);
+        SKBitmap? spare = Interlocked.Exchange(ref _spare, null);
         if (spare is not null && (spare.Width != w || spare.Height != h)) { spare.Dispose(); spare = null; }
-        Bitmap bmp = spare ?? new Bitmap(w, h, PixelFormat.Format32bppRgb);
-        BitmapData bd = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
-        try
+        SKBitmap bmp = spare ?? new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Opaque));
         {
-            nint dstP = bd.Scan0, yP = (nint)y0, uP = (nint)u0, vP = (nint)v0;
-            int stride = bd.Stride, lsY = ls[0], lsU = ls[1], lsV = ls[2];
+            nint dstP = bmp.GetPixels(), yP = (nint)y0, uP = (nint)u0, vP = (nint)v0;
+            int stride = bmp.RowBytes, lsY = ls[0], lsU = ls[1], lsV = ls[2];
             Parallel.For(0, (h + 1) / 2, row2 =>
             {
                 byte* dst0 = (byte*)dstP, yb = (byte*)yP;
@@ -223,18 +222,18 @@ internal sealed unsafe class H264Decoder : IDisposable
                         r = r < 0 ? 0 : r > 255 ? 255 : r;
                         g = g < 0 ? 0 : g > 255 ? 255 : g;
                         b = b < 0 ? 0 : b > 255 ? 255 : b;
-                        d[x] = (uint)(r << 16 | g << 8 | b);
+                        d[x] = 0xFF000000u | (uint)(r << 16 | g << 8 | b);
                     }
                 }
             });
         }
-        finally { bmp.UnlockBits(bd); }
+        bmp.NotifyPixelsChanged();
         Width = w; Height = h;
         if (FrameDecoded is { } handler) handler(bmp); else bmp.Dispose();
     }
 
     /// <summary>Gives a bitmap back for reuse (avoids allocating one per frame).</summary>
-    public void Recycle(Bitmap bmp)
+    public void Recycle(SKBitmap bmp)
     {
         if (_disposed || bmp.Width != Width || bmp.Height != Height || Interlocked.CompareExchange(ref _spare, bmp, null) is not null) bmp.Dispose();
     }

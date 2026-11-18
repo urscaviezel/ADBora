@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.IO.Compression;
 using System.Text;
+using SkiaSharp;
 
 namespace AdbTool.Backup;
 
@@ -205,57 +204,46 @@ internal static class ApkMetadataReader
         if (fgBytes is null)
             return null;
 
-        using Bitmap? fg = ImageLoader.Decode(fgBytes);
+        using SKBitmap? fg = ImageLoader.Decode(fgBytes);
         if (fg is null)
             return null;
 
         int size = Math.Max(fg.Width, fg.Height);
-        using var canvas = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-        using (Graphics g = Graphics.FromImage(canvas))
+        var full = new SKRect(0, 0, size, size);
+        using SKBitmap canvas = ImageLoader.NewBitmap(size, size);
+        using (var g = new SKCanvas(canvas))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.Clear(Color.Transparent);
-
             if (bgAttr is not null && bgAttr.DataType == ResValue.TypeReference)
             {
                 List<(int Density, ResValue Value)> bgValues = table.ResolveAll(bgAttr.Data);
                 var color = bgValues.FirstOrDefault(v => v.Value.IsColor);
                 if (color.Value is not null)
                 {
-                    using var brush = new SolidBrush(Color.FromArgb(unchecked((int)color.Value.Data)));
-                    g.FillRectangle(brush, 0, 0, size, size);
+                    g.Clear(DrawableRenderer.Argb(color.Value.Data));
                 }
                 else if (LoadRasterOnly(zip, table, bgAttr.Data) is { } bgBytes && ImageLoader.Decode(bgBytes) is { } bg)
                 {
-                    using (bg) g.DrawImage(bg, 0, 0, size, size);
+                    using (bg) ImageLoader.Draw(g, bg, full);
                 }
             }
             else if (bgAttr is not null && bgAttr.IsColor)
             {
-                using var brush = new SolidBrush(Color.FromArgb(unchecked((int)bgAttr.Data)));
-                g.FillRectangle(brush, 0, 0, size, size);
+                g.Clear(DrawableRenderer.Argb(bgAttr.Data));
             }
 
-            g.DrawImage(fg, 0, 0, size, size);
+            ImageLoader.Draw(g, fg, full);
         }
 
         // Visible area of an adaptive icon is the inner 72dp of 108dp.
         int inner = (int)Math.Round(size * 72.0 / 108.0);
         int offset = (size - inner) / 2;
-        using var output = new Bitmap(inner, inner, PixelFormat.Format32bppArgb);
-        using (Graphics g = Graphics.FromImage(output))
+        using SKBitmap output = ImageLoader.NewBitmap(inner, inner);
+        using (var g = new SKCanvas(output))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using GraphicsPath mask = UI.Theme.RoundedRect(new Rectangle(0, 0, inner - 1, inner - 1), inner / 5);
-            g.SetClip(mask);
-            g.DrawImage(canvas, new Rectangle(0, 0, inner, inner), new Rectangle(offset, offset, inner, inner), GraphicsUnit.Pixel);
+            ImageLoader.ClipIcon(g, inner);
+            ImageLoader.Draw(g, canvas, new SKRect(0, 0, inner, inner), SKRect.Create(offset, offset, inner, inner));
         }
-
-        using var ms = new MemoryStream();
-        output.Save(ms, ImageFormat.Png);
-        return ms.ToArray();
+        return ImageLoader.EncodePng(output);
     }
 
     private static byte[]? LoadRasterOnly(ZipArchive zip, ResourceTable table, uint resId)

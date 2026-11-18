@@ -36,26 +36,27 @@ internal readonly record struct AdbResult(int ExitCode, string Output, string Er
     public string Combined => string.IsNullOrWhiteSpace(Error) ? Output : (string.IsNullOrWhiteSpace(Output) ? Error : Output + Environment.NewLine + Error);
 }
 
-/// <summary>Locates adb.exe on this PC.</summary>
+/// <summary>Locates adb (adb.exe on Windows) on this PC.</summary>
 internal static class AdbLocator
 {
     public const string PlatformToolsUrl = "https://developer.android.com/tools/releases/platform-tools";
 
     public static string? Discover(string configured)
     {
+        string adb = Platform.Exe("adb");
         var candidates = new List<string?>
         {
             configured,
-            Path.Combine(AppContext.BaseDirectory, "adb", "adb.exe"),
-            Path.Combine(AppContext.BaseDirectory, "platform-tools", "adb.exe"),
-            Path.Combine(AppContext.BaseDirectory, "adb.exe"),
+            Path.Combine(AppContext.BaseDirectory, "adb", adb),
+            Path.Combine(AppContext.BaseDirectory, "platform-tools", adb),
+            Path.Combine(AppContext.BaseDirectory, adb),
         };
 
         foreach (string variable in new[] { "ANDROID_SDK_ROOT", "ANDROID_HOME" })
         {
             string? root = Environment.GetEnvironmentVariable(variable);
             if (!string.IsNullOrWhiteSpace(root))
-                candidates.Add(Path.Combine(root, "platform-tools", "adb.exe"));
+                candidates.Add(Path.Combine(root, "platform-tools", adb));
         }
 
         string? pathVar = Environment.GetEnvironmentVariable("PATH");
@@ -63,14 +64,26 @@ internal static class AdbLocator
         {
             foreach (string dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             {
-                try { candidates.Add(Path.Combine(dir.Trim('"'), "adb.exe")); } catch { }
+                try { candidates.Add(Path.Combine(dir.Trim('"'), adb)); } catch { }
             }
         }
 
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        candidates.Add(Path.Combine(local, "Android", "Sdk", "platform-tools", "adb.exe"));
-        candidates.Add(@"C:\Android\platform-tools\adb.exe");
-        candidates.Add(@"C:\platform-tools\adb.exe");
+        if (Platform.IsWindows)
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            candidates.Add(Path.Combine(local, "Android", "Sdk", "platform-tools", adb));
+            candidates.Add(@"C:\Android\platform-tools\adb.exe");
+            candidates.Add(@"C:\platform-tools\adb.exe");
+        }
+        else
+        {
+            // Android Studio default, distribution packages, manual download into the home folder
+            candidates.Add(Path.Combine(Platform.Home, "Android", "Sdk", "platform-tools", adb));
+            candidates.Add(Path.Combine(Platform.Home, "platform-tools", adb));
+            candidates.Add("/opt/android-sdk/platform-tools/adb");
+            candidates.Add("/usr/bin/adb");
+            candidates.Add("/usr/local/bin/adb");
+        }
 
         foreach (string? candidate in candidates)
         {

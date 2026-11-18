@@ -97,8 +97,123 @@ internal sealed unsafe class AacDecoder : IDisposable
     public static readonly int[] SampleRates = { 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350 };
 }
 
-/// <summary>Plays 16-bit PCM through the default Windows audio device (waveOut), low latency.</summary>
+/// <summary>Plays 16-bit PCM on the default audio device of the PC (Windows: waveOut, Linux: PulseAudio/PipeWire).</summary>
 internal sealed class AudioPlayer : IDisposable
+{
+    private readonly IAudioOutput _out;
+
+    public int Rate { get; }
+    public int Channels { get; }
+
+    public AudioPlayer(int rate, int channels, int maxLatencyMs = 300)
+    {
+        Rate = rate;
+        Channels = channels;
+        _out = OperatingSystem.IsWindows()
+            ? new WaveOutPlayer(rate, channels, maxLatencyMs)
+            : new PulsePlayer(rate, channels, maxLatencyMs);
+    }
+
+    /// <summary>Queues interleaved samples; never blocks (drops when more than the latency is queued).</summary>
+    public void Write(short[] samples, int count) => _out.Write(samples, count);
+
+    public void Dispose() => _out.Dispose();
+}
+
+internal interface IAudioOutput : IDisposable
+{
+    void Write(short[] samples, int count);
+}
+
+/// <summary>
+/// Linux: libpulse-simple (PulseAudio or PipeWire via pipewire-pulse). pa_simple_write blocks,
+/// so a writer thread takes the blocks from a queue; the queue is limited to the latency.
+/// </summary>
+internal sealed class PulsePlayer : IAudioOutput
+{
+    private const string Lib = "libpulse-simple.so.0";
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SampleSpec { public int Format; public uint Rate; public byte Channels; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BufferAttr { public uint MaxLength, TLength, PreBuf, MinReq, FragSize; }
+
+    [DllImport(Lib)] private static extern IntPtr pa_simple_new(string? server, string name, int dir, string? dev, string streamName,
+        ref SampleSpec ss, IntPtr map, ref BufferAttr attr, out int error);
+    [DllImport(Lib)] private static extern unsafe int pa_simple_write(IntPtr s, void* data, nuint bytes, out int error);
+    [DllImport(Lib)] private static extern int pa_simple_flush(IntPtr s, out int error);
+    [DllImport(Lib)] private static extern void pa_simple_free(IntPtr s);
+    [DllImport("libpulse.so.0")] private static extern IntPtr pa_strerror(int error);
+
+    private const int SampleS16Le = 3, DirectionPlayback = 1;
+    private readonly IntPtr _handle;
+    private readonly object _gate = new();
+    private readonly Queue<short[]> _queue = new();
+    private readonly int _maxQueuedSamples;
+    private int _queuedSamples;
+    private bool _stop;
+    private readonly Thread _thread;
+
+    public PulsePlayer(int rate, int channels, int maxLatencyMs)
+    {
+        var spec = new SampleSpec { Format = SampleS16Le, Rate = (uint)rate, Channels = (byte)channels };
+        int bytesPerSecond = rate * channels * 2;
+        // ~60 ms server-side buffer: low latency without crackling
+        var attr = new BufferAttr { MaxLength = uint.MaxValue, TLength = (uint)(bytesPerSecond * 60 / 1000), PreBuf = uint.MaxValue, MinReq = uint.MaxValue, FragSize = uint.MaxValue };
+        _handle = pa_simple_new(null, "ADBora", DirectionPlayback, null, "Headset", ref spec, IntPtr.Zero, ref attr, out int error);
+        if (_handle == IntPtr.Zero)
+            throw new InvalidOperationException("PulseAudio: " + (Marshal.PtrToStringUTF8(pa_strerror(error)) ?? error.ToString()));
+        _maxQueuedSamples = rate * channels * maxLatencyMs / 1000;
+        _thread = new Thread(Run) { IsBackground = true, Name = "ADBora audio out" };
+        _thread.Start();
+    }
+
+    public void Write(short[] samples, int count)
+    {
+        lock (_gate)
+        {
+            if (_stop || _queuedSamples + count > _maxQueuedSamples) return; // keep latency low: drop
+            _queue.Enqueue(samples.AsSpan(0, count).ToArray());
+            _queuedSamples += count;
+            Monitor.Pulse(_gate);
+        }
+    }
+
+    private unsafe void Run()
+    {
+        while (true)
+        {
+            short[] block;
+            lock (_gate)
+            {
+                while (_queue.Count == 0 && !_stop) Monitor.Wait(_gate);
+                if (_stop) return;
+                block = _queue.Dequeue();
+                _queuedSamples -= block.Length;
+            }
+            fixed (short* p = block)
+                if (pa_simple_write(_handle, p, (nuint)(block.Length * 2), out _) < 0) return;
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_stop) return;
+            _stop = true;
+            Monitor.PulseAll(_gate);
+        }
+        _thread.Join(1000);
+        pa_simple_flush(_handle, out _);
+        pa_simple_free(_handle);
+    }
+}
+
+/// <summary>Plays 16-bit PCM through the default Windows audio device (waveOut), low latency.</summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+internal sealed class WaveOutPlayer : IAudioOutput
 {
     [StructLayout(LayoutKind.Sequential)]
     private struct WaveFormat { public ushort Tag, Channels; public uint SamplesPerSec, AvgBytesPerSec; public ushort BlockAlign, BitsPerSample, Size; }
@@ -121,7 +236,7 @@ internal sealed class AudioPlayer : IDisposable
     public int Rate { get; }
     public int Channels { get; }
 
-    public AudioPlayer(int rate, int channels, int maxLatencyMs = 300)
+    public WaveOutPlayer(int rate, int channels, int maxLatencyMs = 300)
     {
         Rate = rate;
         Channels = channels;

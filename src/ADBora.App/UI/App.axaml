@@ -1,0 +1,133 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AdbTool.UI.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <!-- Fluent picks up the accent for check boxes, focus, selection, progress -->
+          <Color x:Key="SystemAccentColor">#2a8f7b</Color>
+          <Color x:Key="SystemAccentColorLight1">#359b84</Color>
+          <Color x:Key="SystemAccentColorLight2">#4fb89e</Color>
+          <Color x:Key="SystemAccentColorLight3">#67d5b5</Color>
+          <Color x:Key="SystemAccentColorDark1">#217a69</Color>
+          <Color x:Key="SystemAccentColorDark2">#1a6356</Color>
+          <Color x:Key="SystemAccentColorDark3">#134b41</Color>
+
+          <SolidColorBrush x:Key="TextControlBackground" Color="#1b293b" />
+          <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1f2f44" />
+          <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#1b293b" />
+          <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#1b2737" />
+          <SolidColorBrush x:Key="TextControlBorderBrush" Color="#3a4c64" />
+          <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#4b607c" />
+          <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#67d5b5" />
+          <SolidColorBrush x:Key="TextControlForeground" Color="#e4ecf7" />
+          <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#e4ecf7" />
+          <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#738097" />
+          <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#738097" />
+          <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#738097" />
+
+          <SolidColorBrush x:Key="ComboBoxBackground" Color="#1b293b" />
+          <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#223249" />
+          <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#223249" />
+          <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#3a4c64" />
+          <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#4b607c" />
+          <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#162234" />
+          <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#2b394f" />
+
+          <SolidColorBrush x:Key="ToolTipBackground" Color="#233249" />
+          <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#3a4c64" />
+          <SolidColorBrush x:Key="ToolTipForeground" Color="#e4ecf7" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="Background" Value="#111a28" />
+      <Setter Property="Foreground" Value="#e4ecf7" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#a8b4c6" />
+    </Style>
+    <Style Selector="TextBlock.bold">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- Flat, rounded dark buttons: normal / primary / danger -->
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#26364d" />
+      <Setter Property="BorderBrush" Value="#3a4c64" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#e4ecf7" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#344a65" />
+      <Setter Property="BorderBrush" Value="#3a4c64" />
+      <Setter Property="Foreground" Value="#e4ecf7" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2d3f57" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="#217a69" />
+      <Setter Property="BorderBrush" Value="#359b84" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2a8f7b" />
+      <Setter Property="BorderBrush" Value="#359b84" />
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="#8a3b3b" />
+      <Setter Property="BorderBrush" Value="#b05454" />
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#a14848" />
+      <Setter Property="BorderBrush" Value="#b05454" />
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1b2737" />
+      <Setter Property="BorderBrush" Value="#293548" />
+      <Setter Property="Foreground" Value="#738097" />
+    </Style>
+
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.console">
+      <Setter Property="Background" Value="#0e1622" />
+      <Setter Property="Foreground" Value="#a8b4c6" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="32" />
+    </Style>
+    <Style Selector="CheckBox, RadioButton">
+      <Setter Property="Foreground" Value="#e4ecf7" />
+    </Style>
+  </Application.Styles>
+</Application>

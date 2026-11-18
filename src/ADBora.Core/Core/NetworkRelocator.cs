@@ -21,7 +21,6 @@ internal sealed class NetworkRelocator
     private readonly AppState _state;
     private readonly Dictionary<string, string> _hw = new();          // "ip:port" → ro.serialno
     private readonly Dictionary<string, DateTime> _lostSince = new(); // "ip:port" → first seen not ready
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 3000 };
     private bool _running;
     private DateTime _lastScan = DateTime.MinValue;
 
@@ -31,8 +30,19 @@ internal sealed class NetworkRelocator
     public NetworkRelocator(AppState state)
     {
         _state = state;
-        _timer.Tick += async (_, _) => await CheckAsync();
-        _timer.Start();
+        Loop();
+    }
+
+    /// <summary>
+    /// Runs every 3 s. Started on the UI thread, so the awaits resume there (like the former UI timer).
+    /// </summary>
+    private async void Loop()
+    {
+        while (true)
+        {
+            await Task.Delay(3000);
+            try { await CheckAsync(); } catch { }
+        }
     }
 
     private static bool IsNetwork(string serial) => Regex.IsMatch(serial, @"^\d+\.\d+\.\d+\.\d+:\d+$");
