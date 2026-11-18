@@ -56,7 +56,7 @@ internal sealed class CastViewer : Window, ICastViewer
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         RenderOptions.SetBitmapInterpolationMode(_image, BitmapInterpolationMode.MediumQuality);
         _waiting.Text = Loc.T("Warte auf das Bild des Headsets …", "Waiting for the headset picture …");
-        Content = new Panel { Children = { _waiting, _image } };
+        Content = new Panel { Background = Brushes.Black, Children = { _waiting, _image } };
 
         _timer.Tick += (_, _) =>
         {
