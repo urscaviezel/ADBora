@@ -67,7 +67,24 @@ internal sealed class SpeedTestPage : DockPanel, IPage
     private const int StallTimeoutMs = 10_000;
 
     /// <summary>Address of the headset for the direct TCP test (IPv6 link-local with the PC's interface as scope).</summary>
-    private sealed record DirectTarget(string Name, IPAddress Address, bool Wifi = false);
+    private sealed record DirectTarget(string Name, IPAddress Address, TargetKind Kind)
+    {
+        public bool Wifi => Kind == TargetKind.Wifi;
+    }
+
+    /// <summary>
+    /// The direct test covers two different set-ups (plus Wi-Fi):
+    /// USB NCM = network over the USB cable itself, PC ↔ headset, IPv6 link-local (no IPv4 / DHCP – that is normal);
+    /// USB Ethernet adapter = adapter on the headset, cable to the router, PC ↔ router ↔ headset over IPv4.
+    /// </summary>
+    private enum TargetKind { UsbNcm, EthernetAdapter, Wifi }
+
+    private static string KindText(TargetKind kind) => kind switch
+    {
+        TargetKind.UsbNcm => Loc.T("USB-NCM über USB-Kabel", "USB NCM over the USB cable"),
+        TargetKind.EthernetAdapter => Loc.T("USB-Ethernet-Adapter über Router", "USB Ethernet adapter via router"),
+        _ => Loc.T("WLAN über Router", "Wi-Fi via router"),
+    };
     private readonly TextBox _duration = Ui.TextBox(110);
 
     private readonly Button _check = Ui.Button("Gerät prüfen", "Check device");
@@ -211,9 +228,15 @@ internal sealed class SpeedTestPage : DockPanel, IPage
 
         var how = Ui.Label(
             "Messpfad ADB: PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc → /dev/null. Der Wert ist der Durchsatz dieses ADB/TCP-Pfads, nicht die theoretische USB-Busgeschwindigkeit. " +
-            "TCP/IP direkt: PC ↔ Netzwerkadapter ↔ toybox nc auf dem Headset, ohne ADB – über USB-NCM (USB-Netzwerk; bei der Quest schaltet ADBora es bei Bedarf über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren), einen USB-Ethernet-Adapter am Headset oder WLAN; gemessen wird in beide Richtungen. Es wird nichts auf dem Gerät gespeichert.",
+            "TCP/IP direkt (ohne ADB, beide Richtungen) – zwei verschiedene Messungen: " +
+            "① USB-NCM: Netzwerk direkt über das USB-Kabel zwischen PC und Headset, per IPv6 link-local (eine IPv4-Adresse gibt es dabei normalerweise nicht). Bei der Quest schaltet ADBora es über die Begleit-App ein, bei der Play For Dream in den experimentellen Einstellungen aktivieren. " +
+            "② USB-Ethernet-Adapter am Headset, per Kabel am Router: Messung PC ↔ Router ↔ Headset über IPv4 – zeigt, was das Heimnetz schafft. " +
+            "Dazu WLAN über den Router zum Vergleich. Es wird nichts auf dem Gerät gespeichert.",
             "ADB path: PC TCP sender → adb reverse → USB/WLAN → toybox nc → /dev/null. The value is the throughput of this ADB/TCP path, not the theoretical USB bus speed. " +
-            "TCP/IP direct: PC ↔ network adapter ↔ toybox nc on the headset, without ADB – over USB NCM (USB networking; on the Quest ADBora switches it on via the companion app when needed, on the Play For Dream enable it in the experimental settings), a USB Ethernet adapter on the headset or Wi-Fi; both directions are measured. Nothing is written to the device.", muted: true);
+            "TCP/IP direct (without ADB, both directions) – two different measurements: " +
+            "① USB NCM: network directly over the USB cable between PC and headset, via IPv6 link-local (there is normally no IPv4 address). On the Quest ADBora switches it on via the companion app, on the Play For Dream enable it in the experimental settings. " +
+            "② USB Ethernet adapter on the headset, cable to the router: measures PC ↔ router ↔ headset over IPv4 – shows what the home network achieves. " +
+            "Plus Wi-Fi via the router for comparison. Nothing is written to the device.", muted: true);
         how.Margin = new Thickness(0, 10, 0, 0);
         grid.AddRow(how);
         settings.SetContent(grid);
@@ -861,30 +884,23 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             static bool IsUsb(string name) => Regex.IsMatch(name, @"^(usb|ncm|rndis)\d*$");
             NetworkInterface[] pcNics = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up).ToArray();
 
-            foreach (string usbIf in v4.Select(x => x.If).Concat(v6.Select(x => x.If)).Where(IsUsb).Distinct())
+            // 1) USB NCM: network over the USB cable, always IPv6 link-local (scope = the PC's USB network adapter).
+            //    An IPv4 address on the headset's usb0 is not used – the PC normally has none there.
+            foreach (var (usbIf, ip6) in v6.Where(x => IsUsb(x.If)).GroupBy(x => x.If).Select(g => g.First()))
             {
-                // IPv4 if the PC is in the same subnet
-                var ip4 = v4.FirstOrDefault(x => x.If == usbIf);
-                if (ip4.Ip is not null && pcNics.Any(n => n.GetIPProperties().UnicastAddresses.Any(u => SameSubnet(u.Address, ip4.Ip, ip4.Prefix))))
-                {
-                    found.Add(new DirectTarget($"USB-NCM ({usbIf}) · {ip4.Ip}", ip4.Ip));
-                    continue;
-                }
-                // otherwise IPv6 link-local over every USB network adapter of the PC
-                var ip6 = v6.FirstOrDefault(x => x.If == usbIf);
-                if (ip6.Ip is null) continue;
                 foreach (NetworkInterface nic in pcNics.Where(IsUsbAdapter))
                 {
                     if (!nic.Supports(NetworkInterfaceComponent.IPv6)) continue;
-                    var addr = new IPAddress(ip6.Ip.GetAddressBytes(), nic.GetIPProperties().GetIPv6Properties().Index);
-                    found.Add(new DirectTarget($"USB-NCM ({usbIf}) · IPv6 · {nic.Name}", addr));
+                    var addr = new IPAddress(ip6.GetAddressBytes(), nic.GetIPProperties().GetIPv6Properties().Index);
+                    found.Add(new DirectTarget($"{KindText(TargetKind.UsbNcm)} · IPv6 link-local ({usbIf} ↔ {nic.Name})", addr, TargetKind.UsbNcm));
                 }
             }
-            // USB-Ethernet adapter on the headset (e.g. RTL8156): reachable over the LAN like Wi-Fi
+            // 2) USB Ethernet adapter on the headset (e.g. RTL8156), cable to the router: IPv4 over the LAN
             foreach (var e in v4.Where(x => Regex.IsMatch(x.If, @"^eth\d+$")))
-                found.Add(new DirectTarget($"Ethernet ({e.If}) · {e.Ip}", e.Ip));
+                found.Add(new DirectTarget($"{KindText(TargetKind.EthernetAdapter)} · {e.Ip} ({e.If})", e.Ip, TargetKind.EthernetAdapter));
+            // 3) Wi-Fi via the router
             foreach (var w in v4.Where(x => x.If.StartsWith("wlan", StringComparison.Ordinal)))
-                found.Add(new DirectTarget($"{Loc.T("WLAN", "Wi-Fi")} ({w.If}) · {w.Ip}", w.Ip, Wifi: true));
+                found.Add(new DirectTarget($"{KindText(TargetKind.Wifi)} · {w.Ip} ({w.If})", w.Ip, TargetKind.Wifi));
         }
         catch (Exception ex)
         {
@@ -902,15 +918,16 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         }
         else
         {
-            int usb = _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal));
-            bool eth = _targets.Any(t => t.Name.StartsWith("Ethernet", StringComparison.Ordinal));
-            if (usb >= 0) SetStatus("USB-NCM gefunden.", "USB NCM found.");
-            else if (eth) SetStatus("USB-Ethernet-Adapter am Headset gefunden.", "USB Ethernet adapter on the headset found.");
-            else SetStatus("Nur WLAN gefunden – USB-NCM ist nicht aktiv (Play For Dream: in den experimentellen Einstellungen einschalten).",
-                           "Only Wi-Fi found – USB NCM is not active (Play For Dream: switch it on in the experimental settings).");
+            bool usb = _targets.Any(t => t.Kind == TargetKind.UsbNcm);
+            bool eth = _targets.Any(t => t.Kind == TargetKind.EthernetAdapter);
+            if (usb && eth) SetStatus("USB-NCM (USB-Kabel) und USB-Ethernet-Adapter (Router) gefunden – Ziel auswählen.", "USB NCM (USB cable) and USB Ethernet adapter (router) found – choose the target.");
+            else if (usb) SetStatus("USB-NCM gefunden – Messung direkt über das USB-Kabel (IPv6 link-local).", "USB NCM found – measuring directly over the USB cable (IPv6 link-local).");
+            else if (eth) SetStatus("USB-Ethernet-Adapter am Headset gefunden – Messung über den Router (IPv4).", "USB Ethernet adapter on the headset found – measuring via the router (IPv4).");
+            else SetStatus("Nur WLAN gefunden – kein USB-NCM aktiv (Play For Dream: in den experimentellen Einstellungen einschalten) und kein USB-Ethernet-Adapter am Headset.",
+                           "Only Wi-Fi found – no USB NCM active (Play For Dream: switch it on in the experimental settings) and no USB Ethernet adapter on the headset.");
         }
-        int preferred = _targets.FindIndex(t => t.Name.StartsWith("USB", StringComparison.Ordinal));
-        if (preferred < 0) preferred = _targets.FindIndex(t => t.Name.StartsWith("Ethernet", StringComparison.Ordinal));
+        int preferred = _targets.FindIndex(t => t.Kind == TargetKind.UsbNcm);
+        if (preferred < 0) preferred = _targets.FindIndex(t => t.Kind == TargetKind.EthernetAdapter);
         _directTarget.SelectedIndex = Math.Max(0, preferred);
         _targetsSerial = _targets.Count > 0 ? device.Serial : null;
         _detecting = false;
@@ -1002,17 +1019,9 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         catch { return Regex.IsMatch(nic.Name, @"^(usb\d|enx|enp\d+s\d+(f\d+)?u)"); }
     }
 
-    private static bool SameSubnet(IPAddress a, IPAddress b, int prefix)
-    {
-        if (a.AddressFamily != AddressFamily.InterNetwork || b.AddressFamily != AddressFamily.InterNetwork || a.Equals(b)) return false;
-        uint ua = BitConverter.ToUInt32(a.GetAddressBytes().Reverse().ToArray()), ub = BitConverter.ToUInt32(b.GetAddressBytes().Reverse().ToArray());
-        uint mask = prefix == 0 ? 0 : uint.MaxValue << (32 - prefix);
-        return (ua & mask) == (ub & mask);
-    }
-
     private async Task<string> RunDirectAsync(DirectTarget target, int port, double duration, CancellationToken token)
     {
-        _targetValue.Text = target.Name.Split(" · ")[0]; // e.g. "USB-NCM (usb0)"; full name in the history
+        _targetValue.Text = KindText(target.Kind); // full name (address, interface) in the history
         _attemptValue.Text = Loc.T("↓ Headset → PC", "↓ headset → PC");
         int streams = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
         double down = await RunDirectAttemptAsync(target, port, duration, streams, download: true, token);
