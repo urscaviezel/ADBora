@@ -129,7 +129,7 @@ internal sealed class PerformancePage : DockPanel, IPage
         SetDock(chartCard, Dock.Bottom);
         Children.Add(top);
         Children.Add(chartCard);
-        Children.Add(new ScrollViewer { Content = _tiles, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
+        Children.Add(new ScrollViewer { Content = _tiles, MinHeight = 160, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
         FitChart();
     }
 

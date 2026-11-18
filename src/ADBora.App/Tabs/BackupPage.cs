@@ -182,7 +182,7 @@ internal sealed class BackupPage : DockPanel, IPage
         Children.Add(new Border
         {
             BorderBrush = AppTheme.CardBorder, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-            Background = AppTheme.Card, Margin = new Thickness(0, 0, 0, 8), ClipToBounds = true, Child = table,
+            Background = AppTheme.Card, Margin = new Thickness(0, 0, 0, 8), ClipToBounds = true, Child = table, MinHeight = 220,
         });
     }
 

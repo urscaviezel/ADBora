@@ -22,6 +22,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _busyLabel = new() { Foreground = AppTheme.Warning, Margin = new Thickness(0, 0, 14, 0) };
     private readonly TextBlock _subtitle = new() { Text = "Android Device Toolbox", Margin = new Thickness(12, 6, 0, 0) };
     private readonly List<Control> _pages = new();
+    private readonly List<Control> _hosts = new();   // the page itself, or its scroll host
     private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromSeconds(4) };
     private readonly bool _smokeTest;
     private NetworkRelocator? _relocator;
@@ -38,10 +39,11 @@ internal sealed class MainWindow : Window
 
         Title = $"ADBora {AppInfo.DisplayVersion}";
         Icon = AppIcon;
-        MinWidth = 620;
-        MinHeight = 560;
-        Width = Math.Max(620, _state.Settings.WindowWidth);
-        Height = Math.Max(560, _state.Settings.WindowHeight);
+        // small enough for a quarter of a Full HD screen; the pages scroll when space runs out
+        MinWidth = 560;
+        MinHeight = 400;
+        Width = Math.Max(MinWidth, _state.Settings.WindowWidth);
+        Height = Math.Max(MinHeight, _state.Settings.WindowHeight);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         if (_state.Settings.WindowMaximized)
             WindowState = WindowState.Maximized;
@@ -142,8 +144,13 @@ internal sealed class MainWindow : Window
         _pages.Add(new InfoPage(_state, ExitForUpdate));
         foreach (Control page in _pages)
         {
-            page.IsVisible = false;
-            _content.Children.Add(page);
+            // Pages with a filling bottom part scroll when the window is too low (half / quarter screen)
+            Control host = page is DockPanel dock && !(dock.Children.Count == 1 && dock.Children[0] is ScrollViewer)
+                ? FillScroll.Wrap(dock)
+                : page;
+            host.IsVisible = false;
+            _hosts.Add(host);
+            _content.Children.Add(host);
         }
 
         var root = new DockPanel();
@@ -164,7 +171,7 @@ internal sealed class MainWindow : Window
     private void ShowPage(int index)
     {
         for (int i = 0; i < _pages.Count; i++)
-            _pages[i].IsVisible = i == index;
+            _hosts[i].IsVisible = i == index;
         _state.Settings.LastTab = index;
         if (IsVisible) (_pages[index] as IPage)?.OnActivated();
     }

@@ -13,7 +13,7 @@ internal enum TabGlyph { Settings, Backup, Install, Speed, Stream, Performance, 
 internal sealed class TabStrip : Border
 {
     private readonly StackPanel _panel = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 6, 12, 0) };
-    private readonly List<(Border Item, TabIcon Icon, TextBlock Text, Border Line)> _tabs = new();
+    private readonly List<(Border Item, TabIcon Icon, TextBlock Text, Border Line, Grid Content)> _tabs = new();
     private int _selected = -1;
 
     public event Action<int>? SelectedIndexChanged;
@@ -23,34 +23,80 @@ internal sealed class TabStrip : Border
         Background = AppTheme.HeaderBackground;
         BorderBrush = AppTheme.CardBorder;
         BorderThickness = new Thickness(0, 0, 0, 1);
-        Child = new ScrollViewer
+        ClipToBounds = true;
+        Child = _panel;
+        // Narrow window: drop the icons, then shorten the widest tabs ("…") so all tabs stay visible
+        SizeChanged += (_, e) => { if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) > 0.5) FitTabs(e.NewSize.Width); };
+        Loc.LanguageChanged += () => FitTabs(Bounds.Width);
+    }
+
+    private void FitTabs(double width)
+    {
+        if (width <= 0 || _tabs.Count == 0) return;
+        double available = width - _panel.Margin.Left - _panel.Margin.Right;
+        double Total()
         {
-            Content = _panel,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-        };
+            double sum = 0;
+            foreach (var t in _tabs)
+            {
+                t.Item.Measure(Size.Infinity);
+                sum += t.Item.DesiredSize.Width + t.Item.Margin.Left + t.Item.Margin.Right;
+            }
+            return sum;
+        }
+        void Mode(bool compact)
+        {
+            foreach (var t in _tabs)
+            {
+                t.Icon.IsVisible = !compact;
+                t.Content.Margin = compact ? new Thickness(10, 11, 10, 12) : new Thickness(12, 11, 12, 12);
+                t.Item.Margin = new Thickness(0, 0, compact ? 2 : 4, 0);
+                t.Item.MaxWidth = double.PositiveInfinity;
+            }
+        }
+
+        Mode(compact: false);
+        if (Total() <= available) return;
+        Mode(compact: true);
+        if (Total() <= available) return;
+
+        // Still too wide (long translations): cap the widest tabs only – the largest cap that still fits
+        double[] widths = _tabs.Select(t => t.Item.DesiredSize.Width).ToArray();
+        double gaps = _tabs.Sum(t => t.Item.Margin.Left + t.Item.Margin.Right);
+        double lo = 40, hi = widths.Max();
+        for (int i = 0; i < 30 && hi - lo > 0.5; i++)
+        {
+            double mid = (lo + hi) / 2;
+            if (widths.Sum(w => Math.Min(w, mid)) + gaps <= available) lo = mid; else hi = mid;
+        }
+        foreach (var t in _tabs) t.Item.MaxWidth = lo;
     }
 
     public void AddTab(TabGlyph glyph, string de, string en)
     {
         int index = _tabs.Count;
         var icon = new TabIcon { Glyph = glyph, Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0) };
-        var text = new TextBlock { FontSize = AppTheme.TabSize, FontWeight = FontWeight.SemiBold };
+        var text = new TextBlock { FontSize = AppTheme.TabSize, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
         Ui.Bind(text, de, en);
         var line = new Border { Height = 3, CornerRadius = new CornerRadius(2), Margin = new Thickness(10, 0, 10, 0), VerticalAlignment = VerticalAlignment.Top };
-        var content = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 11, 16, 12), Children = { icon, text } };
+        // Grid instead of a horizontal StackPanel: the text gets the remaining width and can end with "…"
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(12, 11, 12, 12) };
+        Grid.SetColumn(text, 1);
+        content.Children.Add(icon);
+        content.Children.Add(text);
         var item = new Border
         {
             CornerRadius = new CornerRadius(7, 7, 0, 0),
             Margin = new Thickness(0, 0, 4, 0),
             Cursor = new Cursor(StandardCursorType.Hand),
+            ClipToBounds = true,
             Child = new Panel { Children = { content, line } },
         };
         Loc.Bind(item, v => ToolTip.SetTip(item, v), de, en);
         item.PointerPressed += (_, e) => { if (e.GetCurrentPoint(item).Properties.IsLeftButtonPressed) SelectedIndex = index; };
         item.PointerEntered += (_, _) => { if (index != _selected) item.Background = AppTheme.HeaderHover; };
         item.PointerExited += (_, _) => { if (index != _selected) item.Background = Brushes.Transparent; };
-        _tabs.Add((item, icon, text, line));
+        _tabs.Add((item, icon, text, line, content));
         _panel.Children.Add(item);
         Paint();
     }
@@ -71,7 +117,7 @@ internal sealed class TabStrip : Border
     {
         for (int i = 0; i < _tabs.Count; i++)
         {
-            var (item, icon, text, line) = _tabs[i];
+            var (item, icon, text, line, _) = _tabs[i];
             bool selected = i == _selected;
             item.Background = selected ? AppTheme.Background : Brushes.Transparent;
             line.Background = selected ? AppTheme.Accent : Brushes.Transparent;
