@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -41,7 +42,18 @@ internal sealed class AppEntry
     public string Note { get; set; } = "";
     public string Version { get; set; } = "";
     public string VersionCode { get; set; } = "";
+    /// <summary>Icon from the APK.</summary>
     public byte[] Icon { get; set; } = Array.Empty<byte>();
+    /// <summary>Cover from the Meta store (empty = none / not looked up).</summary>
+    public byte[] StoreIcon { get; set; } = Array.Empty<byte>();
+    /// <summary>Last store lookup (Unix seconds); 0 = never.</summary>
+    public long StoreChecked { get; set; }
+    /// <summary><see cref="StoreArt.Revision"/> of that lookup.</summary>
+    public int StoreRevision { get; set; }
+    /// <summary>Shown icon: the store cover where the scan decided so (see <see cref="StoreArtMode"/>), else the APK icon.</summary>
+    public byte[] DisplayIcon { get; set; } = Array.Empty<byte>();
+    /// <summary>APK signature of the cache entry (to save the store result later).</summary>
+    internal List<string>? CacheSignature { get; set; }
 }
 
 internal sealed record BackupSelection(AppEntry App, bool Apk, bool Obb, bool Data)
@@ -89,6 +101,9 @@ internal sealed class BackupService
 
     /// <summary>Store split apps as one .apks file (like SAI / AnExplorer) instead of single APKs.</summary>
     public bool BundleSplits { get; init; }
+
+    /// <summary>Store artwork for the scan (set by the caller from the settings and the device type).</summary>
+    public StoreArtMode StoreArt { get; set; } = StoreArtMode.Off;
 
     public BackupService(AdbClient adb, Action<string> log, Action<int, int> progress, CancellationToken token)
     {
@@ -165,6 +180,7 @@ internal sealed class BackupService
                             if (cache.TryRestore(app, signature))
                             {
                                 hits++;
+                                app.CacheSignature = signature;
                             }
                             else
                             {
@@ -192,6 +208,7 @@ internal sealed class BackupService
                                 List<string>? after = signature is null ? null : await ApkSignatureAsync(app.Apks);
                                 if (signature is not null && after is not null && signature.SequenceEqual(after))
                                 {
+                                    app.CacheSignature = signature;
                                     try { cache.Save(app, signature); }
                                     catch (Exception ex)
                                     {
@@ -225,7 +242,12 @@ internal sealed class BackupService
         }
 
         if (resolveNames)
+        {
             _log(Loc.T($"App-Details: {hits} aus Cache, {loaded} neu eingelesen.", $"App details: {hits} cached, {loaded} newly read."));
+            await ApplyStoreArtAsync(apps, cache);
+        }
+        else
+            foreach (AppEntry a in apps) a.DisplayIcon = a.Icon;
 
         // Install / update time: mtime of each base APK, one shell call for all apps
         try
@@ -329,6 +351,57 @@ internal sealed class BackupService
         }
         parts.Insert(0, rest);
         return parts.ToArray();
+    }
+
+    private static readonly TimeSpan StoreRetry = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Store covers (see <see cref="StoreArtMode"/>): looks up the apps that need one and were not
+    /// checked yet (a miss is tried again after 14 days), saves the result in the metadata cache
+    /// and decides the shown icon. Network trouble only skips the lookup – the scan never fails here.
+    /// </summary>
+    private async Task ApplyStoreArtAsync(List<AppEntry> apps, MetadataCache cache)
+    {
+        bool Wants(AppEntry a) => StoreArt == StoreArtMode.All ||
+            (StoreArt == StoreArtMode.Gaps && (a.Icon.Length == 0 || PlaceholderIcons.Detect(a.Icon) is not null));
+
+        var wanted = apps.Where(a => StoreArt != StoreArtMode.Off && Wants(a)).ToHashSet();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var todo = wanted.Where(a => a.CacheSignature is not null && a.Name != a.Package &&
+                (a.StoreChecked == 0 || (a.StoreIcon.Length == 0 &&
+                    (a.StoreRevision < Backup.StoreArt.Revision || now - a.StoreChecked > StoreRetry.TotalSeconds))))
+            .ToList();
+
+        if (todo.Count > 0)
+        {
+            _log(Loc.T($"Lade Store-Bilder von Meta für {todo.Count} Apps …", $"Loading store images from Meta for {todo.Count} apps …"));
+            int found = 0, failed = 0;
+            using HttpClient client = Backup.StoreArt.CreateClient();
+            using var gate = new SemaphoreSlim(6);
+            await Task.WhenAll(todo.Select(async app =>
+            {
+                await gate.WaitAsync(_token);
+                try
+                {
+                    if (Volatile.Read(ref failed) >= 3) return;   // offline / blocked: do not wait for every app
+                    app.StoreIcon = await Backup.StoreArt.FindCoverAsync(client, app.Name, app.VersionCode, _token);
+                    app.StoreChecked = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                    app.StoreRevision = Backup.StoreArt.Revision;
+                    if (app.StoreIcon.Length > 0) Interlocked.Increment(ref found);
+                    try { cache.Save(app, app.CacheSignature); } catch { }
+                }
+                catch (OperationCanceledException) when (_token.IsCancellationRequested) { throw; }
+                catch (Exception) { Interlocked.Increment(ref failed); }
+                finally { gate.Release(); }
+            }));
+            _log(failed > 0
+                ? Loc.T($"Store-Bilder: {found} gefunden; Meta-Store teilweise nicht erreichbar – beim nächsten Einlesen erneut.",
+                        $"Store images: {found} found; Meta store partly unreachable – tried again on the next scan.")
+                : Loc.T($"Store-Bilder: {found} von {todo.Count} gefunden.", $"Store images: {found} of {todo.Count} found."));
+        }
+
+        foreach (AppEntry a in apps)
+            a.DisplayIcon = wanted.Contains(a) && a.StoreIcon.Length > 0 ? a.StoreIcon : a.Icon;
     }
 
     /// <summary>No icon in base.apk: look in the (small) density splits of an app bundle.</summary>

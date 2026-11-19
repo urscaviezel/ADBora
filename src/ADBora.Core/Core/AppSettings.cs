@@ -32,6 +32,8 @@ internal sealed class AppSettings
     public string AdbPath { get; set; } = "";
     public string LastDeviceSerial { get; set; } = "";
     public bool StopAdbServerOnExit { get; set; } = true;
+    /// <summary>APK backup: load app covers from the Meta store (sends app names to Meta).</summary>
+    public bool StoreArtwork { get; set; } = true;
     /// <summary>Show device serial numbers shortened (screenshots).</summary>
     public bool HideSerial { get; set; }
     public int LastTab { get; set; }

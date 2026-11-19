@@ -307,7 +307,7 @@ internal sealed class BackupPage : DockPanel, IPage
     {
         if (_icons.TryGetValue(app.Package, out Bitmap? cached))
             return cached;
-        using SKBitmap? decoded = ImageLoader.Decode(app.Icon);
+        using SKBitmap? decoded = ImageLoader.Decode(app.DisplayIcon.Length > 0 ? app.DisplayIcon : app.Icon);
         using SKBitmap thumb = decoded is not null ? ImageLoader.Thumbnail(decoded, 80) : LetterIcon(app.Name, 80);   // 2× for HiDPI
         var result = new Bitmap(new MemoryStream(ImageLoader.EncodePng(thumb)));
         _icons[app.Package] = result;
@@ -484,7 +484,12 @@ internal sealed class BackupPage : DockPanel, IPage
         var log = new Progress<string>(OnMessage);
         var progress = new Progress<(int, int)>(OnProgress);
         var service = new BackupService(new AdbClient(_state.AdbPath!, device.Serial),
-            ((IProgress<string>)log).Report, (c, t) => ((IProgress<(int, int)>)progress).Report((c, t)), _cts.Token);
+            ((IProgress<string>)log).Report, (c, t) => ((IProgress<(int, int)>)progress).Report((c, t)), _cts.Token)
+        {
+            StoreArt = !_state.Settings.StoreArtwork ? StoreArtMode.Off
+                : device.Model.Contains("Quest", StringComparison.OrdinalIgnoreCase) ? StoreArtMode.All
+                : StoreArtMode.Gaps,
+        };
 
         try
         {

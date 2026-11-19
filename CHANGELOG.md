@@ -11,6 +11,12 @@
 - DE: Backups enthalten zusätzlich ein **`INSTALL.sh`** (Wiederherstellung unter Linux/macOS).
 - DE: PFD-Metrics wird direkt per ADB installiert (ohne PowerShell-Konsolenfenster, auch unter Linux).
 - DE: Ein zweiter Start bringt das laufende ADBora-Fenster nach vorne (Windows und Linux).
+- DE: APK Backup: **App-Bilder aus dem Meta-Store** – auf der Quest zeigen alle Apps ihr Store-Bild wie in der Bibliothek;
+  auf anderen Headsets (PICO, Play For Dream) nur Apps ohne Icon oder mit Unity-/Unreal-Standardlogo. Suche nach App-Name,
+  bestätigt über die Versionsnummer; abschaltbar in den Einstellungen (sendet App-Namen an Meta).
+- DE: APK Backup: Icons aus den Dichte-Splits von App-Bundles (z. B. Kodi).
+- DE: Performance: Messung übersteht ein kurzes Neuanmelden des Headsets am USB; Temperaturen der Quest 3 über thermalservice.
+- DE: Speedtest: ungültige ADB-Messwerte (Empfänger auf dem Headset beendet) werden als Fehler gemeldet.
 - EN: **ADBora now also runs on Linux.** New shared code base for Windows and Linux: .NET 10, UI with Avalonia UI
   (same look as before), graphics with SkiaSharp. Linux package `ADBora-<version>-Linux-x64.tar.gz` (self-contained,
   no .NET installation needed) with `install-desktop.sh` for the application menu; automatic updates on Linux too.
@@ -20,6 +26,12 @@
 - EN: Backups additionally contain an **`INSTALL.sh`** (restore on Linux/macOS).
 - EN: PFD-Metrics is installed directly via ADB (no PowerShell console window, on Linux too).
 - EN: A second start brings the running ADBora window to the front (Windows and Linux).
+- EN: APK backup: **app images from the Meta store** – on a Quest every app shows its store image as in the library;
+  on other headsets (PICO, Play For Dream) only apps without icon or with the Unity/Unreal default logo. Searched by app
+  name, confirmed by the version code; can be switched off in the settings (sends app names to Meta).
+- EN: APK backup: icons from the density splits of app bundles (e.g. Kodi).
+- EN: Performance: monitoring survives a brief USB re-enumeration of the headset; Quest 3 temperatures via thermalservice.
+- EN: Speed test: invalid ADB results (receiver on the headset ended) are reported as an error.
 
 ## v1.6.0 – 2026-11-18
 

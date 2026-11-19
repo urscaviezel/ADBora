@@ -51,9 +51,20 @@ internal static class Diagnostics
         if (backupTest >= 0 && backupTest + 4 < args.Length)
             return BackupTest(args[backupTest + 1], args[backupTest + 2], args[backupTest + 3], args[backupTest + 4]);
 
+        int iconFp = Array.IndexOf(args, "--icon-fp");
+        if (iconFp >= 0 && iconFp + 1 < args.Length)
+        {
+            foreach (string f in Directory.GetFiles(args[iconFp + 1], "*.png").Order())
+            {
+                byte[]? fp = PlaceholderIcons.Fingerprint(File.ReadAllBytes(f));
+                Console.WriteLine($"{Path.GetFileNameWithoutExtension(f)} {(fp is null ? "-" : Convert.ToHexString(fp))} {PlaceholderIcons.Detect(File.ReadAllBytes(f)) ?? "-"}");
+            }
+            return 0;
+        }
+
         int scanTest = Array.IndexOf(args, "--scan-test");
         if (scanTest >= 0 && scanTest + 3 < args.Length)
-            return ScanTest(args[scanTest + 1], args[scanTest + 2], args[scanTest + 3]);
+            return ScanTest(args[scanTest + 1], args[scanTest + 2], args[scanTest + 3], scanTest + 4 < args.Length ? args[scanTest + 4] : "off");
 
         if (args.Contains("--audio-test"))
             return AudioTest();
@@ -87,21 +98,26 @@ internal static class Diagnostics
     }
 
     /// <summary>Scans the user apps like the Backup tab; per app: icon size, decodable, saved as PNG.</summary>
-    public static int ScanTest(string adb, string serial, string dir)
+    public static int ScanTest(string adb, string serial, string dir, string storeMode)
     {
         Directory.CreateDirectory(dir);
         var sb = new System.Text.StringBuilder();
         try
         {
-            var service = new BackupService(new AdbClient(adb, serial), t => sb.AppendLine("log " + t), (c, t) => { }, CancellationToken.None);
+            var service = new BackupService(new AdbClient(adb, serial), t => sb.AppendLine("log " + t), (c, t) => { }, CancellationToken.None)
+            {
+                StoreArt = storeMode == "all" ? StoreArtMode.All : storeMode == "gaps" ? StoreArtMode.Gaps : StoreArtMode.Off,
+            };
             var sw = System.Diagnostics.Stopwatch.StartNew();
             List<AppEntry> apps = service.ScanAsync(resolveNames: true).GetAwaiter().GetResult();
             sb.AppendLine($"scan {apps.Count} apps in {sw.Elapsed.TotalSeconds:0.0} s");
             foreach (AppEntry a in apps.OrderBy(a => a.Package))
             {
                 using SKBitmap? bmp = ImageLoader.Decode(a.Icon);
-                if (bmp is not null) ImageLoader.SavePng(bmp, Path.Combine(dir, a.Package + ".png"));
-                sb.AppendLine($"{(a.Icon.Length == 0 ? "NOICON " : bmp is null ? "UNDECODABLE " : "ok ")}{a.Package} | {a.Name} | {a.Icon.Length} B{(bmp is null ? "" : $" {bmp.Width}x{bmp.Height}")}");
+                using SKBitmap? shown = ImageLoader.Decode(a.DisplayIcon);
+                if (shown is not null) ImageLoader.SavePng(shown, Path.Combine(dir, a.Package + ".png"));
+                string source = a.DisplayIcon.Length == 0 ? "none" : ReferenceEquals(a.DisplayIcon, a.StoreIcon) ? "STORE" : "apk";
+                sb.AppendLine($"{(a.Icon.Length == 0 ? "NOICON " : bmp is null ? "UNDECODABLE " : "ok ")}{a.Package} | {a.Name} | {a.Icon.Length} B{(bmp is null ? "" : $" {bmp.Width}x{bmp.Height}")} | placeholder={PlaceholderIcons.Detect(a.Icon) ?? "-"} | shown={source} store={a.StoreIcon.Length} B");
             }
             File.WriteAllText(Path.Combine(dir, "scan.txt"), sb.ToString());
             return 0;

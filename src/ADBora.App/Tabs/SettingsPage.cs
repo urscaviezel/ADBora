@@ -18,6 +18,9 @@ internal sealed class SettingsPage : ScrollViewer, IPage
     private readonly TextBlock _languageName = new() { Margin = new Thickness(0, 0, 12, 0) };
     private readonly Button _language = Ui.Button("Sprache ändern", "Change language");
     private readonly CheckBox _stopServer = Ui.CheckBox("ADB-Server beim Beenden stoppen", "Stop ADB server on exit");
+    private readonly CheckBox _storeArt = Ui.CheckBox(
+        "APK Backup: App-Bilder aus dem Meta-Store laden (sendet App-Namen an Meta)",
+        "APK backup: load app images from the Meta store (sends app names to Meta)");
     private readonly CheckBox _hideSerial = Ui.CheckBox("Seriennummern und Benutzerordner ausblenden (z. B. für Screenshots)", "Hide serial numbers and user folder (e.g. for screenshots)");
 
     private readonly TextBox _adbPath = new() { IsReadOnly = true, Margin = new Thickness(0, 4, 0, 4) };
@@ -96,6 +99,16 @@ internal sealed class SettingsPage : ScrollViewer, IPage
         };
         Ui.AddRow(generalGrid, Ui.Label("Sprache / Language", "Language / Sprache", muted: true), Ui.Row(_languageName, _language));
         Ui.AddRow(generalGrid, Ui.Spacer(), _stopServer);
+        _storeArt.IsChecked = _state.Settings.StoreArtwork;
+        _storeArt.IsCheckedChanged += (_, _) =>
+        {
+            _state.Settings.StoreArtwork = _storeArt.IsChecked == true;
+            _state.Settings.Save();
+        };
+        ToolTip.SetTip(_storeArt, Loc.T(
+            "Quest: alle Apps zeigen ihr Store-Bild wie in der Bibliothek der Brille. Andere Headsets: nur Apps ohne Icon oder mit Unity-/Unreal-Standardlogo. Gesucht wird nach dem App-Namen.",
+            "Quest: every app shows its store image as in the headset library. Other headsets: only apps without icon or with the Unity/Unreal default logo. Searched by app name."));
+        Ui.AddRow(generalGrid, Ui.Spacer(), _storeArt);
         _hideSerial.IsChecked = _state.Settings.HideSerial;
         _hideSerial.IsCheckedChanged += (_, _) =>
         {

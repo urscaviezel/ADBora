@@ -98,6 +98,10 @@ internal sealed class MetadataCache
             app.Version = version;
             app.VersionCode = versionCode;
             app.Icon = iconBytes;
+            if (data["store_icon"]?.GetValue<string>() is { Length: > 0 and < 8 * 1024 * 1024 } store)
+                app.StoreIcon = Convert.FromBase64String(store);
+            app.StoreChecked = data["store_checked"] is JsonValue sc && sc.TryGetValue(out long t) ? t : 0;
+            app.StoreRevision = data["store_rev"] is JsonValue sr && sr.TryGetValue(out int rev) ? rev : 1;
             return true;
         }
         catch
@@ -121,7 +125,10 @@ internal sealed class MetadataCache
             ["version"] = app.Version,
             ["version_code"] = app.VersionCode,
             ["icon"] = Convert.ToBase64String(app.Icon),
-            ["reader"] = ReaderVersion
+            ["reader"] = ReaderVersion,
+            ["store_icon"] = Convert.ToBase64String(app.StoreIcon),
+            ["store_checked"] = app.StoreChecked,
+            ["store_rev"] = app.StoreRevision
         };
 
         Directory.CreateDirectory(_root);
