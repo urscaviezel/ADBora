@@ -395,7 +395,9 @@ internal sealed class MainWindow : Window
         if (!_smokeTest)
             _state.Settings.Save();
 
-        if (_state.Settings.StopAdbServerOnExit && _state.Adb is { } adb && !_smokeTest)
+        // Not right after a USB speed test: the restart could leave a Quest "offline" until it is replugged
+        bool recentStress = DateTime.UtcNow - _state.LastUsbStress < TimeSpan.FromSeconds(30);
+        if (_state.Settings.StopAdbServerOnExit && _state.Adb is { } adb && !_smokeTest && !recentStress)
         {
             try { adb.KillServerAsync().Wait(TimeSpan.FromSeconds(5)); } catch { }
         }

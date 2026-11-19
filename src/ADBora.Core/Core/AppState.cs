@@ -16,6 +16,12 @@ internal sealed class AppState
     public string? BusyOperation { get; private set; }
     public bool IsBusy => BusyOperation is not null;
 
+    /// <summary>
+    /// End of the last heavy USB transfer through the adb server (speed test, ADB path). Stopping
+    /// the server right after it left a Quest 3 "offline" until it was replugged.
+    /// </summary>
+    public DateTime LastUsbStress { get; set; } = DateTime.MinValue;
+
     public event Action? AdbChanged;
     public event Action? DevicesChanged;
     public event Action? SelectedDeviceChanged;
