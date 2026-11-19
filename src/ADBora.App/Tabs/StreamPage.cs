@@ -21,6 +21,10 @@ namespace AdbTool.Tabs;
 /// </summary>
 internal sealed class StreamPage : ScrollViewer, IPage
 {
+    // Derived from ScrollViewer: without this the control gets the ContentControl template
+    // (no scroll presenter, no scroll bars) and the page cannot scroll.
+    protected override Type StyleKeyOverride => typeof(ScrollViewer);
+
     private static readonly (string De, string En, int Size, int Mbit)[] Qualities =
     {
         ("Niedrig · 1024 px · 4 Mbit/s", "Low · 1024 px · 4 Mbit/s", 1024, 4),

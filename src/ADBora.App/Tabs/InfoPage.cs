@@ -12,6 +12,10 @@ namespace AdbTool.Tabs;
 /// <summary>Tab 8: build information, licence notes and update check.</summary>
 internal sealed class InfoPage : ScrollViewer, IPage
 {
+    // Derived from ScrollViewer: without this the control gets the ContentControl template
+    // (no scroll presenter, no scroll bars) and the page cannot scroll.
+    protected override Type StyleKeyOverride => typeof(ScrollViewer);
+
     private readonly AppState _state;
     private readonly Action _exitApp;
     private readonly TextBlock _version = Ui.Value();

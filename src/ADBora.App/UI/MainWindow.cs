@@ -189,6 +189,27 @@ internal sealed class MainWindow : Window
 
         if (_smokeTest && Program.UiTest is null)
         {
+            string[] a = Environment.GetCommandLineArgs();
+            int diag = Array.IndexOf(a, "--layout-diag");
+            if (diag > 0 && diag + 1 < a.Length)
+            {
+                // Diagnosis: small window, then report the scroll state of the start tab
+                Width = 700; Height = 450;
+                string file = a[diag + 1];
+                DispatcherTimer.RunOnce(() =>
+                {
+                    Control host = _hosts[_tabs.SelectedIndex];
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine($"tab {_tabs.SelectedIndex} host {host.GetType().Name} bounds {host.Bounds}");
+                    if (host is ScrollViewer sv)
+                        sb.AppendLine($"extent {sv.Extent} viewport {sv.Viewport} offset {sv.Offset} vbar {sv.VerticalScrollBarVisibility} template {(sv.Template is null ? "null" : "set")}");
+                    foreach (var v in System.Linq.Enumerable.Take(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(host), 12))
+                        sb.AppendLine($"  {v.GetType().Name} {v.Bounds}");
+                    System.IO.File.WriteAllText(file, sb.ToString());
+                    _closingDone = true; Close();
+                }, TimeSpan.FromMilliseconds(2000));
+                return;
+            }
             DispatcherTimer.RunOnce(() => { _closingDone = true; Close(); }, TimeSpan.FromMilliseconds(1500));
             return;
         }

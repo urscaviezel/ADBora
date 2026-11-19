@@ -6,9 +6,9 @@ Diese Übergabe beschreibt den Linux-Port. ADBora wurde von WinForms/.NET 8 auf 
 
 | Punkt | Stand |
 |---|---|
-| Branch | **`avalonia`** (14 Commits auf `main`); `main` = alte WinForms-Version |
-| Version | 1.6.0 (`src/ADBora.App/ADBora.App.csproj`) |
-| Remote | **nichts gepusht**, alles nur lokal committet; Push, PR oder Release nur nach Rückfrage |
+| Branch | `main` (seit v2.0.0 die Avalonia-Version; die WinForms-Version bis 1.6.0 steckt im Verlauf/Tag `v1.6.0`) |
+| Version | 2.0.0 (`src/ADBora.App/ADBora.App.csproj`, `src/ADBora.Core/ADBora.Core.csproj`) |
+| Remote | veröffentlicht als v2.0.0; Push, PR oder Release weiterhin nur nach Rückfrage |
 | Zeilenenden | alle Dateien LF, keine `.gitattributes` |
 
 ### Struktur
@@ -118,6 +118,6 @@ Grob alle Tabs einmal durchklicken: Allgemeine Einstellungen, APK Backup (inkl. 
 
 ## Offen
 
-- [ ] Windows 11: bauen, Smoke-Test, alle Tabs durchklicken, Casting mit Ton, Speedtest, Performance, Backup/Restore, Updater, Setup
-- [ ] Speedtest mit USB-Ethernet-Adapter am Router (unter Linux mangels Adapter nicht getestet)
-- [ ] Danach: Merge `avalonia` → `main`, Release (nur nach Rückfrage)
+- [x] Windows 11: bauen, Smoke-Test, alle Tabs durchklicken, Casting mit Ton, Speedtest, Performance, Backup/Restore, Updater, Setup (Fix: Scrollen der von ScrollViewer abgeleiteten Seiten über `StyleKeyOverride`)
+- [x] Speedtest mit USB-Ethernet-Adapter am Router (unter Windows getestet)
+- [x] Merge `avalonia` → `main`, Release v2.0.0

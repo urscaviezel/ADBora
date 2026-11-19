@@ -22,7 +22,9 @@ separate .NET-Laufzeit nötig (self-contained).
 | **Installer** | `ADBora-Setup-<Version>.exe` | `%LOCALAPPDATA%\ADBora`; Startmenü-Eintrag, optional Desktop-Symbol, sauberer Deinstaller unter „Apps“ |
 | **Linux** | `ADBora-<Version>-Linux-x64.tar.gz` entpacken, `ADBora/ADBora` starten; `ADBora/install-desktop.sh` legt einen Eintrag im Anwendungsmenü an | `~/.local/share/ADBora` |
 
-**Linux:** ADB und – für den scrcpy-Modus – scrcpy am besten über die Paketverwaltung installieren
+**Linux:** Ein Paket für alle gängigen 64-Bit-Desktop-Distributionen mit glibc (Ubuntu, Debian, Mint, Fedora,
+openSUSE, Arch/CachyOS, Manjaro …); .NET muss nicht installiert sein. Nicht unterstützt: musl-Systeme (z. B. Alpine)
+und ARM. ADB und – für den scrcpy-Modus – scrcpy am besten über die Paketverwaltung installieren
 (z. B. `sudo pacman -S android-tools scrcpy` bzw. `sudo apt install adb scrcpy`). Das Headset-Casting nutzt die
 FFmpeg-Bibliotheken des Systems (Paket `ffmpeg`), der Ton läuft über PulseAudio/PipeWire. Erscheint ein Gerät als
 „no permissions“, fehlen die udev-Regeln für Android (Paket `android-udev` bzw. `android-sdk-platform-tools-common`).
@@ -295,7 +297,9 @@ required (self-contained).
 | **Installer** | `ADBora-Setup-<version>.exe` | `%LOCALAPPDATA%\ADBora`; Start menu entry, optional desktop icon, clean uninstaller in "Apps" |
 | **Linux** | extract `ADBora-<version>-Linux-x64.tar.gz`, run `ADBora/ADBora`; `ADBora/install-desktop.sh` adds an application menu entry | `~/.local/share/ADBora` |
 
-**Linux:** best install ADB and – for the scrcpy mode – scrcpy with the package manager
+**Linux:** one package for all common 64-bit desktop distributions with glibc (Ubuntu, Debian, Mint, Fedora,
+openSUSE, Arch/CachyOS, Manjaro …); .NET does not need to be installed. Not supported: musl systems (e.g. Alpine)
+and ARM. Best install ADB and – for the scrcpy mode – scrcpy with the package manager
 (e.g. `sudo pacman -S android-tools scrcpy` or `sudo apt install adb scrcpy`). Headset casting uses the system's
 FFmpeg libraries (package `ffmpeg`), audio plays via PulseAudio/PipeWire. If a device shows up as "no permissions",
 the Android udev rules are missing (package `android-udev` or `android-sdk-platform-tools-common`).

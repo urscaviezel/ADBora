@@ -1,6 +1,6 @@
 # Changelog
 
-## Unveröffentlicht / Unreleased
+## v2.0.0 – 2026-11-19
 
 - DE: **ADBora läuft jetzt auch unter Linux.** Neue gemeinsame Codebasis für Windows und Linux: .NET 10, Oberfläche mit
   Avalonia UI (bisheriger Look), Grafik mit SkiaSharp. Linux-Paket `ADBora-<Version>-Linux-x64.tar.gz` (eigenständig,

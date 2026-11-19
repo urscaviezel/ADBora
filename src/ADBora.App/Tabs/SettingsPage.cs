@@ -13,6 +13,10 @@ namespace AdbTool.Tabs;
 /// <summary>Tab 1: language, ADB setup, installed versions and device information.</summary>
 internal sealed class SettingsPage : ScrollViewer, IPage
 {
+    // Derived from ScrollViewer: without this the control gets the ContentControl template
+    // (no scroll presenter, no scroll bars) and the page cannot scroll.
+    protected override Type StyleKeyOverride => typeof(ScrollViewer);
+
     private readonly AppState _state;
 
     private readonly TextBlock _languageName = new() { Margin = new Thickness(0, 0, 12, 0) };
