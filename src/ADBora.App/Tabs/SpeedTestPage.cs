@@ -674,12 +674,25 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         double? rateBytes = targetMbps is null ? null : targetMbps.Value * 1_000_000.0 / 8.0;
         long sent = 0;
         Stopwatch sw = Stopwatch.StartNew();
+        Process? receiver = _ncProcess;
+        double nextReceiverCheck = 0.5;
 
         while (sw.Elapsed.TotalSeconds < duration)
         {
             token.ThrowIfCancellationRequested();
             double elapsed = sw.Elapsed.TotalSeconds;
             Volatile.Write(ref _liveElapsed, elapsed);
+
+            // Without the receiver on the device, adb (reverse) still accepts data for a while and
+            // throws it away – the result would be far above any real link (tens of Gbit/s)
+            if (elapsed >= nextReceiverCheck)
+            {
+                nextReceiverCheck = elapsed + 0.5;
+                if (receiver is { HasExited: true })
+                    throw new InvalidOperationException(Loc.T(
+                        "Der Empfänger auf dem Gerät (toybox nc) wurde vorzeitig beendet – die Messung wäre ungültig und wurde abgebrochen.",
+                        "The receiver on the device (toybox nc) ended early – the measurement would be invalid and was aborted."));
+            }
 
             if (rateBytes is not null)
             {
