@@ -180,6 +180,8 @@ internal sealed class BackupService
                                     app.Version = meta.VersionName;
                                     app.VersionCode = meta.VersionCode;
                                     app.Icon = meta.Icon;
+                                    if (app.Icon.Length == 0)
+                                        app.Icon = await SplitIconAsync(app.Apks, local, tempRoot);
                                 }
                                 finally
                                 {
@@ -327,6 +329,29 @@ internal sealed class BackupService
         }
         parts.Insert(0, rest);
         return parts.ToArray();
+    }
+
+    /// <summary>No icon in base.apk: look in the (small) density splits of an app bundle.</summary>
+    private async Task<byte[]> SplitIconAsync(IReadOnlyList<string> apks, string localBase, string tempRoot)
+    {
+        var splits = apks.Where(p => Regex.IsMatch(Path.GetFileName(p), @"^split_config\.(l|m|tv|h|xh|xxh|xxxh)dpi\.apk$", RegexOptions.IgnoreCase))
+            .OrderByDescending(p => p.Length).ToList();   // xxxhdpi before xhdpi …
+        var locals = new List<string>();
+        try
+        {
+            foreach (string remote in splits)
+            {
+                string local = Path.Combine(tempRoot, Path.GetFileName(remote));
+                try { await PullApkAsync(remote, local); locals.Add(local); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { }
+            }
+            return locals.Count == 0 ? Array.Empty<byte>()
+                : await Task.Run(() => ApkMetadataReader.ReadSplitIcon(localBase, locals) ?? Array.Empty<byte>(), _token);
+        }
+        finally
+        {
+            foreach (string l in locals) TryDelete(l);
+        }
     }
 
     /// <summary>

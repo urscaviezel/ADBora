@@ -18,8 +18,8 @@ internal sealed class MetadataCache
     private readonly string _serial;
     private readonly string _user;
 
-    /// <summary>Version of the icon reader; entries without icon from an older reader are read again (e.g. vector icons since 2).</summary>
-    public const int ReaderVersion = 2;
+    /// <summary>Version of the icon reader; entries without icon from an older reader are read again (e.g. vector icons since 2, icons from density splits since 3).</summary>
+    public const int ReaderVersion = 3;
 
     public static string DefaultRoot => Path.Combine(AppSettings.DataDirectory, "metadata-cache");
 

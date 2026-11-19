@@ -62,22 +62,13 @@ internal static class ApkMetadataReader
             label = launcher?.Attr(AttrLabel, "label")?.AsString(table);
         result.Label = string.IsNullOrWhiteSpace(label) ? result.Package : label.Trim();
 
-        // Icon: application icon → round icon → launcher activity icon.
-        var iconRefs = new List<XmlAttribute?>
+        foreach (uint resId in IconRefs(application, launcher))
         {
-            application?.Attr(AttrIcon, "icon"),
-            application?.Attr(AttrRoundIcon, "roundIcon"),
-            launcher?.Attr(AttrIcon, "icon"),
-            launcher?.Attr(AttrRoundIcon, "roundIcon"),
-        };
-
-        foreach (XmlAttribute? attr in iconRefs)
-        {
-            if (attr is null || table is null || attr.DataType != ResValue.TypeReference)
+            if (table is null)
                 continue;
             try
             {
-                byte[]? icon = LoadIcon(zip, table, attr.Data);
+                byte[]? icon = LoadIcon(zip, table, resId);
                 if (icon is { Length: > 0 and <= 5 * 1024 * 1024 })
                 {
                     result.Icon = icon;
@@ -91,6 +82,60 @@ internal static class ApkMetadataReader
         }
 
         return result;
+    }
+
+    /// <summary>Icon references: application icon → round icon → launcher activity icon.</summary>
+    private static IEnumerable<uint> IconRefs(XmlElement? application, XmlElement? launcher) =>
+        new[]
+        {
+            application?.Attr(AttrIcon, "icon"),
+            application?.Attr(AttrRoundIcon, "roundIcon"),
+            launcher?.Attr(AttrIcon, "icon"),
+            launcher?.Attr(AttrRoundIcon, "roundIcon"),
+        }
+        .Where(a => a is not null && a.DataType == ResValue.TypeReference)
+        .Select(a => a!.Data)
+        .Distinct();
+
+    /// <summary>
+    /// App bundles: the launcher icon often lives only in the density split
+    /// (split_config.xhdpi.apk – own resources.arsc, same resource IDs as the base).
+    /// Looks up the icon references of the base manifest in the given split APKs.
+    /// </summary>
+    public static byte[]? ReadSplitIcon(string baseApk, IEnumerable<string> splitApks)
+    {
+        List<uint> refs;
+        using (ZipArchive zip = ZipFile.OpenRead(baseApk))
+        {
+            byte[]? manifestBytes = ReadEntry(zip, "AndroidManifest.xml");
+            if (manifestBytes is null) return null;
+            List<XmlElement> elements = BinaryXml.Parse(manifestBytes);
+            refs = IconRefs(elements.FirstOrDefault(e => e.Name == "application"), FindLauncherActivity(elements)).ToList();
+        }
+        if (refs.Count == 0) return null;
+
+        foreach (string split in splitApks)
+        {
+            try
+            {
+                using ZipArchive zip = ZipFile.OpenRead(split);
+                byte[]? arsc = ReadEntry(zip, "resources.arsc");
+                if (arsc is null) continue;
+                ResourceTable table = ResourceTable.Parse(arsc);
+                foreach (uint resId in refs)
+                {
+                    try
+                    {
+                        byte[]? icon = LoadIcon(zip, table, resId);
+                        if (icon is { Length: > 0 and <= 5 * 1024 * 1024 })
+                            return icon;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+        return null;
     }
 
     /// <summary>

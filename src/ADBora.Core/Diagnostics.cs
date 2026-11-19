@@ -11,6 +11,7 @@ namespace AdbTool;
 ///   --cast-test &lt;adb&gt; &lt;serial&gt; &lt;quest|pfd|pico&gt; &lt;s&gt; &lt;out.png&gt;  headset casting, last picture + .log + .mkv
 ///   --mkv-test &lt;file.h264&gt; &lt;out.mkv&gt;                            H.264 → MKV with a test tone
 ///   --audio-test                                                 test tone on the PC
+///   --scan-test &lt;adb&gt; &lt;serial&gt; &lt;dir&gt;                           Backup scan: icon found/decodable per app → dir
 ///   --ncm-test &lt;adb&gt; &lt;serial&gt; &lt;s&gt; &lt;log&gt;                        holds Quest USB networking
 /// </summary>
 internal static class Diagnostics
@@ -50,6 +51,10 @@ internal static class Diagnostics
         if (backupTest >= 0 && backupTest + 4 < args.Length)
             return BackupTest(args[backupTest + 1], args[backupTest + 2], args[backupTest + 3], args[backupTest + 4]);
 
+        int scanTest = Array.IndexOf(args, "--scan-test");
+        if (scanTest >= 0 && scanTest + 3 < args.Length)
+            return ScanTest(args[scanTest + 1], args[scanTest + 2], args[scanTest + 3]);
+
         if (args.Contains("--audio-test"))
             return AudioTest();
 
@@ -79,6 +84,29 @@ internal static class Diagnostics
             return report.Apps.Sum(a => a.Errors.Count) == 0 ? 0 : 2;
         }
         catch (Exception ex) { L("ERROR " + ex); return 1; }
+    }
+
+    /// <summary>Scans the user apps like the Backup tab; per app: icon size, decodable, saved as PNG.</summary>
+    public static int ScanTest(string adb, string serial, string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var sb = new System.Text.StringBuilder();
+        try
+        {
+            var service = new BackupService(new AdbClient(adb, serial), t => sb.AppendLine("log " + t), (c, t) => { }, CancellationToken.None);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            List<AppEntry> apps = service.ScanAsync(resolveNames: true).GetAwaiter().GetResult();
+            sb.AppendLine($"scan {apps.Count} apps in {sw.Elapsed.TotalSeconds:0.0} s");
+            foreach (AppEntry a in apps.OrderBy(a => a.Package))
+            {
+                using SKBitmap? bmp = ImageLoader.Decode(a.Icon);
+                if (bmp is not null) ImageLoader.SavePng(bmp, Path.Combine(dir, a.Package + ".png"));
+                sb.AppendLine($"{(a.Icon.Length == 0 ? "NOICON " : bmp is null ? "UNDECODABLE " : "ok ")}{a.Package} | {a.Name} | {a.Icon.Length} B{(bmp is null ? "" : $" {bmp.Width}x{bmp.Height}")}");
+            }
+            File.WriteAllText(Path.Combine(dir, "scan.txt"), sb.ToString());
+            return 0;
+        }
+        catch (Exception ex) { File.WriteAllText(Path.Combine(dir, "scan.txt"), sb + "ERROR " + ex); return 1; }
     }
 
     /// <summary>Plays a 1.5 s test tone (440/660 Hz) on the default output of the PC.</summary>
