@@ -547,9 +547,10 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             else
             {
                 await RemoveReverseAsync(port);
-                // Clean ADB state after a USB test, as in the stand-alone tool. Not for
-                // Wi-Fi devices: stopping the server would drop the Wi-Fi connection.
-                if (_adb is not null && !_adb.Serial.Contains(':'))
+                // Clean ADB state after a USB test, as in the stand-alone tool (Windows). Not for
+                // Wi-Fi devices: stopping the server would drop the Wi-Fi connection. Not on Linux:
+                // after a server restart there, a Quest 3 stayed "offline" until it was replugged.
+                if (Platform.IsWindows && _adb is not null && !_adb.Serial.Contains(':'))
                     await _adb.KillServerAsync();
             }
             _cts.Dispose();
