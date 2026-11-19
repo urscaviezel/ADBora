@@ -3,7 +3,7 @@ param([switch]$NoPause)
 #   dist\ADBora-Portable\           portable: settings/cache in "Data" next to the EXE
 #   dist\ADBora-Portable-<ver>-Windows-x64.zip
 #   dist\ADBora-Setup-<ver>.exe     installer (needs Inno Setup 6; data in %LOCALAPPDATA%\ADBora)
-# Requirements (build PC only): .NET 8 SDK, optional Inno Setup 6.
+# Requirements (build PC only): .NET 10 SDK, optional Inno Setup 6.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $root "src\ADBora.App\ADBora.App.csproj"
