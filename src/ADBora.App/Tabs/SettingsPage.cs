@@ -52,7 +52,7 @@ internal sealed class SettingsPage : ScrollViewer, IPage
 
         _state.AdbChanged += UpdateAdbInfo;
         _state.DevicesChanged += () => { UpdateDeviceList(); SyncConnectAddress(); };
-        _state.SelectedDeviceChanged += () => { UpdateDeviceList(); SyncConnectAddress(); if (IsVisible) _ = LoadDeviceInfoAsync(); };
+        _state.SelectedDeviceChanged += () => { UpdateDeviceList(); SyncConnectAddress(); if (IsEffectivelyVisible) _ = LoadDeviceInfoAsync(); };
         _state.BusyChanged += UpdateEnabled;
         Loc.LanguageChanged += () => { UpdateAdbInfo(); UpdateDeviceList(); RenderInfo(); };
 
@@ -103,7 +103,7 @@ internal sealed class SettingsPage : ScrollViewer, IPage
             _state.Settings.Save();
             Privacy.HideSerial = _hideSerial.IsChecked == true;
         };
-        Privacy.Changed += () => { UpdateDeviceList(); RenderDataMode(); UpdateAdbInfo(); if (IsVisible) _ = LoadDeviceInfoAsync(); };
+        Privacy.Changed += () => { UpdateDeviceList(); RenderDataMode(); UpdateAdbInfo(); if (IsEffectivelyVisible) _ = LoadDeviceInfoAsync(); };
         Ui.AddRow(generalGrid, Ui.Spacer(), _hideSerial);
         Ui.AddRow(generalGrid, Ui.Label("ADBora", "ADBora", muted: true), _toolVersion);
         Ui.AddRow(generalGrid, Ui.Label(".NET-Laufzeit", ".NET runtime", muted: true), _dotnetVersion);

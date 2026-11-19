@@ -313,7 +313,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
     /// </summary>
     private void AutoDetect()
     {
-        if (_pathDirect.IsChecked != true || _cts is not null || _detecting || !IsVisible) return;
+        if (_pathDirect.IsChecked != true || _cts is not null || _detecting || !IsEffectivelyVisible) return;
         if (_state.SelectedDevice is not { IsReady: true } d || !_state.HasAdb || _state.IsBusy) return;
         if (_targets.Count > 0 && _targetsSerial == d.Serial) return;
         _ = DetectTargetsAsync();

@@ -89,8 +89,25 @@ internal sealed class AppState
         }
     }
 
+    private long _selectedMissingSince;
+    private const long MissingGraceMs = 10000;
+
     private void ApplyDevices(List<AdbDevice> devices)
     {
+        // The selected device can vanish for a moment (USB re-enumeration, e.g. a Quest switching
+        // USB networking on or off): keep it selected – listed as offline – for a few seconds
+        // instead of jumping to another device (which ends a running measurement).
+        AdbDevice? selected = SelectedDevice;
+        if (selected is not null && devices.All(d => d.Serial != selected.Serial))
+        {
+            long now = Environment.TickCount64;
+            if (_selectedMissingSince == 0) _selectedMissingSince = now;
+            if (now - _selectedMissingSince < MissingGraceMs)
+                devices = devices.Append(selected with { State = "offline" }).ToList();
+        }
+        else
+            _selectedMissingSince = 0;
+
         bool changed = devices.Count != Devices.Count || devices.Where((d, i) => d != Devices[i]).Any();
         Devices = devices;
         if (changed)
@@ -104,16 +121,17 @@ internal sealed class AppState
             ?? devices.FirstOrDefault(d => d.IsReady)
             ?? devices.FirstOrDefault();
 
-        SelectDevice(next);
+        // An automatic choice is not remembered – the last device picked by the user stays preferred
+        SelectDevice(next, remember: false);
     }
 
-    public void SelectDevice(AdbDevice? device)
+    public void SelectDevice(AdbDevice? device, bool remember = true)
     {
         if (device == SelectedDevice)
             return;
 
         SelectedDevice = device;
-        if (device is not null)
+        if (device is not null && remember && Settings.LastDeviceSerial != device.Serial)
         {
             Settings.LastDeviceSerial = device.Serial;
             Settings.Save();

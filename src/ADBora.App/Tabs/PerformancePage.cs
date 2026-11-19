@@ -54,6 +54,11 @@ internal sealed class PerformancePage : DockPanel, IPage
 
     private Process? _logcat;
     private Process? _sampler;
+    private AdbClient? _adb;
+    private long _startedTick, _nextRestart;
+    private bool _restarted;
+    private static readonly string[] LogcatArgs = new[] { "logcat", "-v", "epoch", "-v", "uid", "-T", "1", "-s" }.Concat(PerfMetrics.LogcatFilter.Split(' ')).ToArray();
+    private static readonly string[] SamplerArgs = { "shell", PerfMetrics.SamplerScript };
     private string? _serial;
     private string _model = "";
     private long _lastAppRuntime, _lastRuntime, _lastSystem;
@@ -224,8 +229,12 @@ internal sealed class PerformancePage : DockPanel, IPage
         _serial = device.Serial;
         _model = device.DisplayName;
 
-        _logcat = StartAdb(adb, new[] { "logcat", "-v", "epoch", "-v", "uid", "-T", "1", "-s" }.Concat(PerfMetrics.LogcatFilter.Split(' ')).ToArray(), OnLogLine);
-        _sampler = StartAdb(adb, new[] { "shell", PerfMetrics.SamplerScript }, OnSystemLine);
+        _logcat = StartAdb(adb, LogcatArgs, OnLogLine);
+        _sampler = StartAdb(adb, SamplerArgs, OnSystemLine);
+        _adb = adb;
+        _startedTick = Environment.TickCount64;
+        _nextRestart = 0;
+        _restarted = false;
         if (_csv.IsChecked == true) OpenCsv();
         _tick.Start();
         _status.Text = Loc.T($"Messung läuft: {device.DisplayName} ({device.ShownSerial})", $"Monitoring: {device.DisplayName} ({device.ShownSerial})");
@@ -260,6 +269,7 @@ internal sealed class PerformancePage : DockPanel, IPage
         _logcat?.Dispose();
         _sampler?.Dispose();
         _logcat = _sampler = null;
+        _adb = null;
         bool was = _serial is not null;
         _serial = null;
         CloseCsv();
@@ -350,7 +360,21 @@ internal sealed class PerformancePage : DockPanel, IPage
 
         WriteCsv(snapshot, app);
 
-        if (_logcat is { HasExited: true } && _sampler is { HasExited: true })
+        // The device can vanish for a moment (USB re-enumeration, e.g. a Quest switching USB
+        // networking on or off): restart ended adb processes – they wait for the device – and only
+        // give up after 20 s without system data (the sampler reports about once a second).
+        long tick = Environment.TickCount64;
+        long sinceData = tick - Math.Max(_lastSystem, _startedTick);
+        bool logcatDead = _logcat is { HasExited: true }, samplerDead = _sampler is { HasExited: true };
+        if ((logcatDead || samplerDead) && _adb is not null && sinceData < 20000 && tick >= _nextRestart)
+        {
+            _nextRestart = tick + 3000;
+            _restarted = true;
+            if (logcatDead) { _logcat!.Dispose(); _logcat = StartAdb(_adb, LogcatArgs.Prepend("wait-for-device").ToArray(), OnLogLine); }
+            if (samplerDead) { _sampler!.Dispose(); _sampler = StartAdb(_adb, SamplerArgs.Prepend("wait-for-device").ToArray(), OnSystemLine); }
+        }
+
+        if (sinceData >= 20000 && (_restarted || logcatDead || samplerDead || _logcat is null || _sampler is null))
         {
             StopMonitoring();
             _status.Text = Loc.T("Verbindung zum Gerät verloren – Messung beendet.", "Connection to the device lost – monitoring ended.");

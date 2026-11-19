@@ -270,7 +270,7 @@ internal static class PerfMetrics
         // fallback for devices that lock /sys/class/thermal for adb (e.g. Meta Quest 3)
         "d=$(dumpsys thermalservice 2>/dev/null); echo \"@H $(echo \"$d\" | grep -m1 'Thermal Status')\"; " +
         "echo \"@T $(echo \"$d\" | sed -n '/Current temperatures from HAL/,/Current cooling devices/p' | grep -o 'mValue=[0-9.-]*, mType=[0-9]*, mName=[^,}]*' | sed 's/mValue=//; s/, mType=/:/; s/, mName=/:/' | tr '\\n' ' ')\"; fi; " +
-        "if [ $((i % 3)) -eq 0 ]; then echo \"@A $(dumpsys activity activities | grep -m1 topResumedActivity)\"; " +
+        "if [ $((i % 3)) -eq 0 ]; then echo \"@A $(dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)\"; " +
         "echo \"@W now=$(date +%s) cur=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) $(grep -E '\\\"(time|battery_current_now_amps|power_wattage|gpu_frequency_MHz)\\\"' " + PfdStatusFile + " 2>/dev/null | tr -d ' \\\",' | tr '\\n' ' ')\"; fi; " +
         "echo @E; i=$((i+1)); sleep 1; done";
 
