@@ -2,7 +2,7 @@
   "_meta": {
     "code": "ru",
     "name": "Русский",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "app": "ADBora",
     "translator": "Claude (AI) – corrections by native speakers welcome"
   },
@@ -839,5 +839,7 @@
   "{0} is missing in the package.": "В пакете отсутствует {0}.",
   "{0} was not found.": "{0} не найден.",
   "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– scrcpy by Genymobile (Apache-2.0) – for streaming, downloaded separately when needed\n– FFmpeg (LGPL) – video/audio decoder, from the scrcpy package (Windows) or the system (Linux)\n– .NET 10 runtime by Microsoft, Avalonia UI, SkiaSharp (all MIT license)": "– Android SDK Platform-Tools (adb) от Google – не входит в комплект, см. их собственные условия лицензии\n– scrcpy от Genymobile (Apache-2.0) – для трансляции, загружается отдельно при необходимости\n– FFmpeg (LGPL) – видео-/аудиодекодер, из пакета scrcpy (Windows) или из системы (Linux)\n– Среда выполнения .NET 10 от Microsoft, Avalonia UI, SkiaSharp (все под лицензией MIT)",
-  "✖ {0} not found – please set it up.": "✖ {0} не найден – настройте его."
+  "✖ {0} not found – please set it up.": "✖ {0} не найден – настройте его.",
+  ", longest {0:0.0} s, total {1:0.0} s": ", самый длинный {0:0.0} с, всего {1:0.0} с",
+  "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)": "Медиана {0:0} Мбит/с · ср. {1:0} · мин. {2:0} · провалов ниже 50 %: {3} · обрывов: {4}"
 }

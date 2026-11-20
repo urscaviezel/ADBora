@@ -2,7 +2,7 @@
   "_meta": {
     "code": "zh-cn",
     "name": "简体中文",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "app": "ADBora",
     "translator": "Claude (AI) – corrections by native speakers welcome"
   },
@@ -839,5 +839,7 @@
   "{0} is missing in the package.": "软件包中缺少 {0}。",
   "{0} was not found.": "未找到 {0}。",
   "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– scrcpy by Genymobile (Apache-2.0) – for streaming, downloaded separately when needed\n– FFmpeg (LGPL) – video/audio decoder, from the scrcpy package (Windows) or the system (Linux)\n– .NET 10 runtime by Microsoft, Avalonia UI, SkiaSharp (all MIT license)": "– Google 的 Android SDK Platform-Tools（adb）——未包含，请参阅其自身的许可条款\n– Genymobile 的 scrcpy（Apache-2.0）——用于串流，需要时单独下载\n– FFmpeg（LGPL）——视频/音频解码器，来自 scrcpy 软件包（Windows）或系统（Linux）\n– Microsoft 的 .NET 10 运行时、Avalonia UI、SkiaSharp（均为 MIT 许可）",
-  "✖ {0} not found – please set it up.": "✖ 未找到 {0}——请进行设置。"
+  "✖ {0} not found – please set it up.": "✖ 未找到 {0}——请进行设置。",
+  ", longest {0:0.0} s, total {1:0.0} s": "，最长 {0:0.0} 秒，共 {1:0.0} 秒",
+  "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)": "中位数 {0:0} Mbit/s · 平均 {1:0} · 最低 {2:0} · 低于 50% 的下降 {3} 次 · 中断 {4} 次"
 }

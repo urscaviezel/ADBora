@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.1 – 2026-11-20
+
+- DE: Speedtest: Die Zusammenfassung (Anzeige, Verlauf, Bericht) zeigt beim TCP/IP-Direkttest getrennte Werte pro Richtung
+  (↓ Headset → PC / ↑ PC → Headset) statt eines gemeinsamen Medians.
+- DE: Speedtest: Nach einem Sprachwechsel folgen auch die bereits erzeugten Texte der neuen Sprache (Ziel-Auswahl,
+  Zusammenfassung, Messweg im Bericht, Phasen im Graphen); die Zusammenfassung ist in allen Sprachen übersetzt.
+- EN: Speed test: the summary (display, history, report) shows separate values per direction for the TCP/IP direct test
+  (↓ headset → PC / ↑ PC → headset) instead of one combined median.
+- EN: Speed test: after a language change, texts created earlier follow the new language too (target selection,
+  summary, test path in the report, chart phases); the summary is translated into all languages.
+
 ## v2.0.0 – 2026-11-19
 
 - DE: **ADBora läuft jetzt auch unter Linux.** Neue gemeinsame Codebasis für Windows und Linux: .NET 10, Oberfläche mit

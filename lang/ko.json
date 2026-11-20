@@ -2,7 +2,7 @@
   "_meta": {
     "code": "ko",
     "name": "한국어",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "app": "ADBora",
     "translator": "Claude (AI) – corrections by native speakers welcome"
   },
@@ -839,5 +839,7 @@
   "{0} is missing in the package.": "패키지에 {0}이(가) 없습니다.",
   "{0} was not found.": "{0}을(를) 찾을 수 없습니다.",
   "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– scrcpy by Genymobile (Apache-2.0) – for streaming, downloaded separately when needed\n– FFmpeg (LGPL) – video/audio decoder, from the scrcpy package (Windows) or the system (Linux)\n– .NET 10 runtime by Microsoft, Avalonia UI, SkiaSharp (all MIT license)": "– Google의 Android SDK Platform-Tools(adb) – 포함되지 않음, 자체 라이선스 조건 참조\n– Genymobile의 scrcpy(Apache-2.0) – 스트리밍용, 필요할 때 별도로 내려받음\n– FFmpeg(LGPL) – 비디오/오디오 디코더, scrcpy 패키지(Windows) 또는 시스템(Linux)에서 제공\n– Microsoft의 .NET 10 런타임, Avalonia UI, SkiaSharp(모두 MIT 라이선스)",
-  "✖ {0} not found – please set it up.": "✖ {0}을(를) 찾을 수 없습니다 – 설정하세요."
+  "✖ {0} not found – please set it up.": "✖ {0}을(를) 찾을 수 없습니다 – 설정하세요.",
+  ", longest {0:0.0} s, total {1:0.0} s": ", 최장 {0:0.0}초, 총 {1:0.0}초",
+  "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)": "중앙값 {0:0} Mbit/s · 평균 {1:0} · 최소 {2:0} · 50% 미만 하락 {3}회 · 끊김 {4}회"
 }

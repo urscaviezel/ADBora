@@ -15,12 +15,20 @@ internal readonly record struct RateSample(double T, double Mbps, int Phase);
 /// <summary>Wi-Fi state of the headset at a point in time (every ~2 s, from "cmd wifi status").</summary>
 internal readonly record struct WifiSample(double T, int Rssi, int TxLink, int RxLink, int Frequency, double RetryPercent, long LostDelta);
 
-/// <summary>Dips (below half the median of the phase) and stalls (practically 0) of a test.</summary>
-internal sealed record SpeedAnalysis(double Median, double Average, double Min, int Dips, int Stalls, double LongestStall, double StallSeconds)
+/// <summary>Dips (below half the median of the phase) and stalls (practically 0) of a test.
+/// Down / Up: separate values per direction (TCP/IP direct test measures both).</summary>
+internal sealed record SpeedAnalysis(double Median, double Average, double Min, int Dips, int Stalls, double LongestStall, double StallSeconds,
+                                     SpeedAnalysis? Down = null, SpeedAnalysis? Up = null)
 {
-    public string Summary(bool english) => english
-        ? $"Median {Median:0} Mbit/s · avg {Average:0} · min {Min:0} · {Dips} dip(s) below 50 % · {Stalls} stall(s)" + (Stalls > 0 ? $", longest {LongestStall:0.0} s, total {StallSeconds:0.0} s" : "")
-        : $"Median {Median:0} Mbit/s · Ø {Average:0} · Min {Min:0} · {Dips} Einbruch/Einbrüche unter 50 % · {Stalls} Aussetzer" + (Stalls > 0 ? $", längster {LongestStall:0.0} s, gesamt {StallSeconds:0.0} s" : "");
+    /// <summary>Summary in the current UI language (re-evaluated when the language changes); per direction if measured both ways.</summary>
+    public string Summary() => Down is { } d && Up is { } u
+        ? $"↓ {d.Summary()}   |   ↑ {u.Summary()}"
+        : Values();
+
+    private string Values() =>
+        Loc.T($"Median {Median:0} Mbit/s · Ø {Average:0} · Min {Min:0} · {Dips} Einbruch/Einbrüche unter 50 % · {Stalls} Aussetzer",
+              $"Median {Median:0} Mbit/s · avg {Average:0} · min {Min:0} · {Dips} dip(s) below 50 % · {Stalls} stall(s)")
+        + (Stalls > 0 ? Loc.T($", längster {LongestStall:0.0} s, gesamt {StallSeconds:0.0} s", $", longest {LongestStall:0.0} s, total {StallSeconds:0.0} s") : "");
 }
 
 /// <summary>
@@ -37,21 +45,25 @@ internal sealed class SpeedChart : Control
 
     private readonly List<RateSample> _samples = new();
     private readonly List<WifiSample> _wifi = new();
-    private readonly List<string> _phases = new();
+    private readonly List<Func<string>> _phases = new(); // names in the current UI language
+    private readonly List<int> _phaseDirection = new();  // 0 = one direction only, 1 = down (headset → PC), 2 = up
     private readonly object _gate = new();
 
     public bool HasData { get { lock (_gate) return _samples.Count > 1; } }
 
     public void Clear()
     {
-        lock (_gate) { _samples.Clear(); _wifi.Clear(); _phases.Clear(); }
+        lock (_gate) { _samples.Clear(); _wifi.Clear(); _phases.Clear(); _phaseDirection.Clear(); }
         Avalonia.Threading.Dispatcher.UIThread.Post(InvalidateVisual);
     }
 
     /// <summary>Starts a new phase (e.g. "↓ headset → PC") and returns its index.</summary>
-    public int AddPhase(string name)
+    public int AddPhase(string name) => AddPhase(() => name);
+
+    /// <param name="direction">0 = single-direction test, 1 = down (headset → PC), 2 = up (PC → headset)</param>
+    public int AddPhase(Func<string> name, int direction = 0)
     {
-        lock (_gate) { _phases.Add(name); return _phases.Count - 1; }
+        lock (_gate) { _phases.Add(name); _phaseDirection.Add(direction); return _phases.Count - 1; }
     }
 
     public void Add(RateSample s)
@@ -69,7 +81,14 @@ internal sealed class SpeedChart : Control
     /// <summary>Dips/stalls per phase; the first second of each phase (ramp-up) is ignored.</summary>
     public SpeedAnalysis? Analyze()
     {
-        lock (_gate) return Analyze(_samples);
+        lock (_gate)
+        {
+            SpeedAnalysis? all = Analyze(_samples);
+            if (all is null) return null;
+            List<RateSample> Dir(int d) => _samples.Where(s => s.Phase < _phaseDirection.Count && _phaseDirection[s.Phase] == d).ToList();
+            SpeedAnalysis? down = Analyze(Dir(1)), up = Analyze(Dir(2));
+            return down is not null && up is not null ? all with { Down = down, Up = up } : all;
+        }
     }
 
     private static SpeedAnalysis? Analyze(List<RateSample> samples)
@@ -133,7 +152,7 @@ internal sealed class SpeedChart : Control
         RateSample[] samples;
         WifiSample[] wifi;
         string[] phases;
-        lock (_gate) { samples = _samples.ToArray(); wifi = _wifi.ToArray(); phases = _phases.ToArray(); }
+        lock (_gate) { samples = _samples.ToArray(); wifi = _wifi.ToArray(); phases = _phases.Select(p => p()).ToArray(); }
         void Label(string s, double x, double y, IBrush brush, bool right = false, double width = 0)
         {
             FormattedText t = Text(s, fontSize, brush);
@@ -310,7 +329,7 @@ internal sealed class SpeedChart : Control
         RateSample[] samples;
         WifiSample[] wifi;
         string[] phases;
-        lock (_gate) { samples = _samples.ToArray(); wifi = _wifi.ToArray(); phases = _phases.ToArray(); }
+        lock (_gate) { samples = _samples.ToArray(); wifi = _wifi.ToArray(); phases = _phases.Select(p => p()).ToArray(); }
         var sb = new StringBuilder();
         foreach (string line in header) sb.Append("# ").AppendLine(line);
         sb.AppendLine("time_s;phase;mbit_s;rssi_dbm;tx_link_mbit;rx_link_mbit;frequency_mhz;retry_percent;lost_tx_packets");

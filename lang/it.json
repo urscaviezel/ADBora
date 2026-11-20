@@ -2,7 +2,7 @@
   "_meta": {
     "code": "it",
     "name": "Italiano",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "app": "ADBora",
     "translator": "Claude (AI) – corrections by native speakers welcome"
   },
@@ -839,5 +839,7 @@
   "{0} is missing in the package.": "{0} manca nel pacchetto.",
   "{0} was not found.": "{0} non trovato.",
   "– Android SDK Platform-Tools (adb) by Google – not included, see their own license terms\n– scrcpy by Genymobile (Apache-2.0) – for streaming, downloaded separately when needed\n– FFmpeg (LGPL) – video/audio decoder, from the scrcpy package (Windows) or the system (Linux)\n– .NET 10 runtime by Microsoft, Avalonia UI, SkiaSharp (all MIT license)": "– Android SDK Platform-Tools (adb) di Google – non incluso, vedere le relative condizioni di licenza\n– scrcpy di Genymobile (Apache-2.0) – per lo streaming, scaricato separatamente se necessario\n– FFmpeg (LGPL) – decoder video/audio, dal pacchetto scrcpy (Windows) o dal sistema (Linux)\n– Runtime .NET 10 di Microsoft, Avalonia UI, SkiaSharp (tutti con licenza MIT)",
-  "✖ {0} not found – please set it up.": "✖ {0} non trovato – configurarlo."
+  "✖ {0} not found – please set it up.": "✖ {0} non trovato – configurarlo.",
+  ", longest {0:0.0} s, total {1:0.0} s": ", il più lungo {0:0.0} s, totale {1:0.0} s",
+  "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)": "Mediana {0:0} Mbit/s · media {1:0} · min {2:0} · {3} calo/i sotto il 50 % · {4} interruzione/i"
 }

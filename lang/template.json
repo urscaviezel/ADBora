@@ -2,7 +2,7 @@
   "_meta": {
     "code": "xx",
     "name": "Language name (in that language)",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "app": "ADBora",
     "translator": ""
   },
@@ -30,6 +30,7 @@
   " · {0} errors": " · {0} errors",
   "! Note: ": "! Note: ",
   "\"{0}\" already exists. Overwrite?": "\"{0}\" already exists. Overwrite?",
+  ", longest {0:0.0} s, total {1:0.0} s": ", longest {0:0.0} s, total {1:0.0} s",
   ".NET": ".NET",
   ".NET runtime": ".NET runtime",
   ".apk (split APKs are detected), .apks / .xapk / .apkm, an app folder or a whole backup folder": ".apk (split APKs are detected), .apks / .xapk / .apkm, an app folder or a whole backup folder",
@@ -420,6 +421,7 @@
   "Low · 1024 px · 4 Mbit/s": "Low · 1024 px · 4 Mbit/s",
   "Manufacturer and model.": "Manufacturer and model.",
   "Max-Speed mode: The first attempt runs without a bandwidth limit. If the connection is lost, the tool automatically rebuilds ADB/Netcat and gradually reduces the transfer rate until a complete test runs stably.": "Max-Speed mode: The first attempt runs without a bandwidth limit. If the connection is lost, the tool automatically rebuilds ADB/Netcat and gradually reduces the transfer rate until a complete test runs stably.",
+  "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)": "Median {0:0} Mbit/s · avg {1:0} · min {2:0} · {3} dip(s) below 50 % · {4} stall(s)",
   "Medium · 1440 px · 8 Mbit/s": "Medium · 1440 px · 8 Mbit/s",
   "Memory": "Memory",
   "Memory clock": "Memory clock",

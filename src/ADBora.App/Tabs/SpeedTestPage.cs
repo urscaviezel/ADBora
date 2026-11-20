@@ -59,7 +59,10 @@ internal sealed class SpeedTestPage : DockPanel, IPage
     private readonly Stopwatch _testClock = new();
     private int _phase;
     private string _firmware = "";
-    private string _testDescription = "";
+    private Func<string> _testDescription = () => ""; // in the current UI language
+    private SpeedAnalysis? _lastAnalysis;
+    private DirectTarget? _currentTarget;
+    private bool? _currentDownload;
     private CancellationTokenSource? _wifiCts;
     private double _lastAnalysisT;
     private bool _detecting;
@@ -67,8 +70,10 @@ internal sealed class SpeedTestPage : DockPanel, IPage
     private const int StallTimeoutMs = 10_000;
 
     /// <summary>Address of the headset for the direct TCP test (IPv6 link-local with the PC's interface as scope).</summary>
-    private sealed record DirectTarget(string Name, IPAddress Address, TargetKind Kind)
+    /// <summary>Detail = address / interface; the name follows the UI language.</summary>
+    private sealed record DirectTarget(string Detail, IPAddress Address, TargetKind Kind)
     {
+        public string Name => $"{KindText(Kind)} · {Detail}";
         public bool Wifi => Kind == TargetKind.Wifi;
     }
 
@@ -154,7 +159,28 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             UpdateEnabled();
             AutoDetect();
         };
-        Loc.LanguageChanged += () => { RenderHmd(); _statusValue.Text = Loc.T(_status.De, _status.En); };
+        Loc.LanguageChanged += () =>
+        {
+            RenderHmd();
+            _statusValue.Text = Loc.T(_status.De, _status.En);
+            // texts created earlier (targets, summary, chart phases) follow the new language
+            if (_targets.Count > 0)
+            {
+                int sel = _directTarget.SelectedIndex;
+                _directTarget.ItemsSource = _targets.Select(t => t.Name).ToList();
+                _directTarget.SelectedIndex = sel;
+            }
+            else if (!_detecting)
+            {
+                _directTarget.ItemsSource = new[] { Loc.T("– noch nicht erkannt –", "– not detected yet –") };
+                _directTarget.SelectedIndex = 0;
+            }
+            _analysis.Text = _lastAnalysis is { } la ? la.Summary()
+                : Loc.T("Einbrüche (unter 50 % des Medians) gelb, Aussetzer rot markiert.", "Dips (below 50 % of the median) marked yellow, stalls red.");
+            if (_liveRunning && _currentTarget is { } ct) _targetValue.Text = KindText(ct.Kind);
+            if (_liveRunning && _currentDownload is { } dl) _attemptValue.Text = dl ? Loc.T("↓ Headset → PC", "↓ headset → PC") : Loc.T("↑ PC → Headset", "↑ PC → headset");
+            _chart.InvalidateVisual();
+        };
         // After the start the device is often reported as ready only a little later
         _state.DevicesChanged += () => Dispatcher.UIThread.Post(AutoDetect);
         UpdateEnabled();
@@ -497,15 +523,20 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             await KeepAwakeAsync(true);
             _firmware = await GetFirmwareAsync();
             _chart.Clear();
+            _lastAnalysis = null;
+            _currentTarget = null;
+            _currentDownload = null;
             _export.IsEnabled = false;
             _lastAnalysisT = 0;
             _testClock.Restart();
             int streamsUsed = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
-            _testDescription = direct
-                ? Loc.T($"Messweg: TCP/IP direkt · {SelectedTarget?.Name} · {streamsUsed} Verbindung(en) · {duration:0} s pro Richtung",
-                        $"Test path: TCP/IP direct · {SelectedTarget?.Name} · {streamsUsed} connection(s) · {duration:0} s per direction")
-                : Loc.T($"Messweg: ADB (adb reverse) über {(_adb.Serial.Contains(':') ? "WLAN-ADB" : "USB")} · {(max ? "Max" : $"Limit {rate:0} Mbit/s")} · {duration:0} s",
-                        $"Test path: ADB (adb reverse) via {(_adb.Serial.Contains(':') ? "Wi-Fi ADB" : "USB")} · {(max ? "max" : $"limit {rate:0} Mbit/s")} · {duration:0} s");
+            DirectTarget? described = SelectedTarget;
+            bool viaWifiAdb = _adb.Serial.Contains(':');
+            _testDescription = () => direct
+                ? Loc.T($"Messweg: TCP/IP direkt · {described?.Name} · {streamsUsed} Verbindung(en) · {duration:0} s pro Richtung",
+                        $"Test path: TCP/IP direct · {described?.Name} · {streamsUsed} connection(s) · {duration:0} s per direction")
+                : Loc.T($"Messweg: ADB (adb reverse) über {(viaWifiAdb ? "WLAN-ADB" : "USB")} · {(max ? "Max" : $"Limit {rate:0} Mbit/s")} · {duration:0} s",
+                        $"Test path: ADB (adb reverse) via {(viaWifiAdb ? "Wi-Fi ADB" : "USB")} · {(max ? "max" : $"limit {rate:0} Mbit/s")} · {duration:0} s");
             if ((direct && SelectedTarget?.Wifi == true) || (!direct && _adb.Serial.Contains(':')))
                 StartWifiPolling(_adb);
 
@@ -536,8 +567,9 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             await KeepAwakeAsync(false);
             if (_chart.Analyze() is { } analysis)
             {
-                _analysis.Text = analysis.Summary(!Loc.IsGerman);
-                Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {analysis.Summary(!Loc.IsGerman)}");
+                _lastAnalysis = analysis;
+                _analysis.Text = analysis.Summary();
+                Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {analysis.Summary()}");
             }
             _export.IsEnabled = _chart.HasData;
             if (direct)
@@ -646,7 +678,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             SetStatus($"Versuch {attemptNo}: teste {targetMbps.Value:0.0} Mbit/s...", $"Attempt {attemptNo}: testing {targetMbps.Value:0.0} Mbit/s...");
 
         _progress.Value = 0;
-        _phase = _chart.AddPhase(Loc.T($"ADB · Versuch {attemptNo}", $"ADB · attempt {attemptNo}") + (targetMbps is null ? "" : $" · {targetMbps.Value:0} Mbit/s"));
+        _phase = _chart.AddPhase(() => Loc.T($"ADB · Versuch {attemptNo}", $"ADB · attempt {attemptNo}") + (targetMbps is null ? "" : $" · {targetMbps.Value:0} Mbit/s"));
         Interlocked.Exchange(ref _liveSent, 0);
         Volatile.Write(ref _liveElapsed, 0);
         _liveDuration = duration;
@@ -750,7 +782,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         if (t - _lastAnalysisT >= 1)
         {
             _lastAnalysisT = t;
-            if (_chart.Analyze() is { } a) _analysis.Text = a.Summary(!Loc.IsGerman);
+            if (_chart.Analyze() is { } a) { _lastAnalysis = a; _analysis.Text = a.Summary(); }
         }
     }
 
@@ -907,15 +939,15 @@ internal sealed class SpeedTestPage : DockPanel, IPage
                 {
                     if (!nic.Supports(NetworkInterfaceComponent.IPv6)) continue;
                     var addr = new IPAddress(ip6.GetAddressBytes(), nic.GetIPProperties().GetIPv6Properties().Index);
-                    found.Add(new DirectTarget($"{KindText(TargetKind.UsbNcm)} · IPv6 link-local ({usbIf} ↔ {nic.Name})", addr, TargetKind.UsbNcm));
+                    found.Add(new DirectTarget($"IPv6 link-local ({usbIf} ↔ {nic.Name})", addr, TargetKind.UsbNcm));
                 }
             }
             // 2) USB Ethernet adapter on the headset (e.g. RTL8156), cable to the router: IPv4 over the LAN
             foreach (var e in v4.Where(x => Regex.IsMatch(x.If, @"^eth\d+$")))
-                found.Add(new DirectTarget($"{KindText(TargetKind.EthernetAdapter)} · {e.Ip} ({e.If})", e.Ip, TargetKind.EthernetAdapter));
+                found.Add(new DirectTarget($"{e.Ip} ({e.If})", e.Ip, TargetKind.EthernetAdapter));
             // 3) Wi-Fi via the router
             foreach (var w in v4.Where(x => x.If.StartsWith("wlan", StringComparison.Ordinal)))
-                found.Add(new DirectTarget($"{KindText(TargetKind.Wifi)} · {w.Ip} ({w.If})", w.Ip, TargetKind.Wifi));
+                found.Add(new DirectTarget($"{w.Ip} ({w.If})", w.Ip, TargetKind.Wifi));
         }
         catch (Exception ex)
         {
@@ -1036,6 +1068,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
 
     private async Task<string> RunDirectAsync(DirectTarget target, int port, double duration, CancellationToken token)
     {
+        _currentTarget = target;
         _targetValue.Text = KindText(target.Kind); // full name (address, interface) in the history
         _attemptValue.Text = Loc.T("↓ Headset → PC", "↓ headset → PC");
         int streams = StreamCounts[Math.Max(0, _streams.SelectedIndex)];
@@ -1091,7 +1124,8 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         }
 
         SetStatus(download ? "Messe Headset → PC..." : "Messe PC → Headset...", download ? "Measuring headset → PC..." : "Measuring PC → headset...");
-        _phase = _chart.AddPhase(download ? Loc.T("↓ Headset → PC", "↓ headset → PC") : Loc.T("↑ PC → Headset", "↑ PC → headset"));
+        _currentDownload = download;
+        _phase = _chart.AddPhase(() => download ? Loc.T("↓ Headset → PC", "↓ headset → PC") : Loc.T("↑ PC → Headset", "↑ PC → headset"), download ? 1 : 2);
         _progress.Value = 0;
         Interlocked.Exchange(ref _liveSent, 0);
         Volatile.Write(ref _liveElapsed, 0);
@@ -1229,9 +1263,9 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             {
                 $"ADBora Speedtest – {DisplayModel(_hmdModel)}",
                 $"{Loc.T("Firmware", "Firmware")}: {(_firmware.Length > 0 ? _firmware : "?")} · {DateTime.Now:yyyy-MM-dd HH:mm}",
-                _testDescription,
+                _testDescription(),
             };
-            if (_chart.Analyze() is { } a) header.Add(a.Summary(!Loc.IsGerman));
+            if (_chart.Analyze() is { } a) header.Add(a.Summary());
             var (png, csv) = _chart.Export(folder, name, header);
             Ui.AppendLine(_history, Loc.T($"Bericht gespeichert: {png} / {Path.GetFileName(csv)}", $"Report saved: {png} / {Path.GetFileName(csv)}"));
             Platform.OpenFolder(folder);
