@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.0.2 – 2026-11-21
+
+- DE: Speedtest TCP/IP direkt: standardmässig **4 parallele Verbindungen** (bisher 1). Eine einzelne TCP-Verbindung
+  bremst über WLAN oft deutlich (z. B. Quest 3: PC → Headset ~350 statt ~1350 Mbit/s). Wer noch auf 1 stand, wird
+  einmalig auf 4 umgestellt; 1 und 8 bleiben wählbar.
+- DE: Speedtest: Auch bei einem abgebrochenen TCP/IP-Test ist die Zusammenfassung pro Richtung gekennzeichnet (↓/↑);
+  eine nur angebrochene Richtung fliesst nicht mehr in die Werte ein.
+- DE: Regressionstests für die Speedtest-Auswertung (`tests/ADBora.SpeedRegression`, laufen portabel).
+- DE: Test-Modi (`--smoke-test`, `--ui-test`) speichern keine Einstellungen mehr (der Build-Test lief mit dem echten Profil).
+- EN: Speed test TCP/IP direct: **4 parallel connections** by default (was 1). A single TCP connection is often a clear
+  limit over Wi-Fi (e.g. Quest 3: PC → headset ~350 instead of ~1350 Mbit/s). Settings still on 1 are switched to 4 once;
+  1 and 8 can still be chosen.
+- EN: Speed test: the summary of a cancelled TCP/IP test is labelled per direction too (↓/↑); a direction that only
+  just started no longer affects the values.
+- EN: Regression tests for the speed test analysis (`tests/ADBora.SpeedRegression`, run in portable mode).
+- EN: Test modes (`--smoke-test`, `--ui-test`) no longer save settings (the build check ran with the real profile).
+
 ## v2.0.1 – 2026-11-20
 
 - DE: Speedtest: Die Zusammenfassung (Anzeige, Verlauf, Bericht) zeigt beim TCP/IP-Direkttest getrennte Werte pro Richtung

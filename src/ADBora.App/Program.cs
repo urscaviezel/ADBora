@@ -30,6 +30,8 @@ internal static class Program
             UiTest = args[(uiTest + 1)..(uiTest + 5)];
             SmokeTest = true; // no single instance, settings are not saved
         }
+        // Build smoke test / UI tests run against the real user profile: never write the user's settings
+        AppSettings.SavingDisabled = SmokeTest;
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportCrash(e.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, e) => { LogCrash(e.Exception); e.SetObserved(); };
 

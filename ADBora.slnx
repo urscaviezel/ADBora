@@ -3,6 +3,9 @@
     <Project Path="src/ADBora.App/ADBora.App.csproj" />
     <Project Path="src/ADBora.Core/ADBora.Core.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ADBora.SpeedRegression/ADBora.SpeedRegression.csproj" />
+  </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/LangExtract/LangExtract.csproj" />
   </Folder>

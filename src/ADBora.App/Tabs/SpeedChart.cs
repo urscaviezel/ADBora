@@ -20,10 +20,14 @@ internal readonly record struct WifiSample(double T, int Rssi, int TxLink, int R
 internal sealed record SpeedAnalysis(double Median, double Average, double Min, int Dips, int Stalls, double LongestStall, double StallSeconds,
                                      SpeedAnalysis? Down = null, SpeedAnalysis? Up = null)
 {
-    /// <summary>Summary in the current UI language (re-evaluated when the language changes); per direction if measured both ways.</summary>
-    public string Summary() => Down is { } d && Up is { } u
-        ? $"↓ {d.Summary()}   |   ↑ {u.Summary()}"
-        : Values();
+    /// <summary>Summary in the current UI language, with each available TCP/IP direction labelled.</summary>
+    public string Summary() => (Down, Up) switch
+    {
+        ({ } down, { } up) => $"↓ {down.Values()}   |   ↑ {up.Values()}",
+        ({ } down, null) => $"↓ {down.Values()}",
+        (null, { } up) => $"↑ {up.Values()}",
+        _ => Values()
+    };
 
     private string Values() =>
         Loc.T($"Median {Median:0} Mbit/s · Ø {Average:0} · Min {Min:0} · {Dips} Einbruch/Einbrüche unter 50 % · {Stalls} Aussetzer",
@@ -83,11 +87,13 @@ internal sealed class SpeedChart : Control
     {
         lock (_gate)
         {
-            SpeedAnalysis? all = Analyze(_samples);
-            if (all is null) return null;
+            if (!_phaseDirection.Any(direction => direction is 1 or 2))
+                return Analyze(_samples);
+
             List<RateSample> Dir(int d) => _samples.Where(s => s.Phase < _phaseDirection.Count && _phaseDirection[s.Phase] == d).ToList();
             SpeedAnalysis? down = Analyze(Dir(1)), up = Analyze(Dir(2));
-            return down is not null && up is not null ? all with { Down = down, Up = up } : all;
+            SpeedAnalysis? result = down is not null && up is not null ? Analyze(_samples) : down ?? up;
+            return result is null ? null : result with { Down = down, Up = up };
         }
     }
 

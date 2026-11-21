@@ -143,8 +143,9 @@ PC-TCP-Sender → adb reverse → USB/WLAN → toybox nc (Gerät) → /dev/null
 Es wird nichts auf dem Gerät gespeichert. Der Wert ist der Durchsatz dieses
 ADB/TCP-Pfads, nicht die theoretische Busgeschwindigkeit.
 
-**TCP/IP direkt** misst ohne ADB im Datenpfad, in beide Richtungen und optional mit
-4 oder 8 parallelen Verbindungen (vergleichbar mit Online-Speedtests):
+**TCP/IP direkt** misst ohne ADB im Datenpfad, in beide Richtungen, standardmässig mit
+4 parallelen Verbindungen (vergleichbar mit Online-Speedtests; wählbar 1, 4 oder 8 – mit 1 Verbindung
+sieht man, was ein einzelner Stream schafft, eine einzelne TCP-Verbindung bremst über WLAN aber oft):
 
 ```text
 PC ↔ Netzwerkadapter (USB-NCM, USB-Ethernet oder WLAN) ↔ toybox nc (Gerät)
@@ -404,8 +405,9 @@ PC TCP sender → adb reverse → USB/Wi-Fi → toybox nc (device) → /dev/null
 Nothing is written to the device. The value is the throughput of this ADB/TCP
 path, not the theoretical bus speed.
 
-**TCP/IP direct** measures without ADB in the data path, in both directions and
-optionally with 4 or 8 parallel connections (comparable to online speed tests):
+**TCP/IP direct** measures without ADB in the data path, in both directions, by default with
+4 parallel connections (comparable to online speed tests; 1, 4 or 8 can be chosen – 1 connection shows
+what a single stream achieves, but a single TCP connection is often the limit over Wi-Fi):
 
 ```text
 PC ↔ network adapter (USB NCM, USB Ethernet or Wi-Fi) ↔ toybox nc (device)

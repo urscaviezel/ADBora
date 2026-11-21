@@ -25,7 +25,7 @@ internal sealed class SavedCommand
 
 internal sealed class AppSettings
 {
-    public int Schema { get; set; } = 1;
+    public int Schema { get; set; } = 2; // 2: speed test with 4 parallel connections by default
 
     // General
     public string Language { get; set; } = "de";
@@ -85,7 +85,7 @@ internal sealed class AppSettings
     public double SpeedRateMbps { get; set; } = 1900;
     public double SpeedDurationSeconds { get; set; } = 600;
     public bool SpeedDirect { get; set; }
-    public int SpeedStreams { get; set; } = 1;
+    public int SpeedStreams { get; set; } = 4;
 
     // ADB commands
     public bool CommandTargetSelectedDevice { get; set; } = true;
@@ -183,11 +183,21 @@ internal sealed class AppSettings
         if (settings.SpeedPort is < 1 or > 65535) settings.SpeedPort = 5001;
         if (settings.SpeedDurationSeconds <= 0) settings.SpeedDurationSeconds = 600;
         if (settings.SpeedRateMbps <= 0) settings.SpeedRateMbps = 1900;
+        if (settings.Schema < 2)
+        {
+            // 1 connection was the old default; a single TCP stream often limits Wi-Fi results (e.g. Quest: ~350 instead of ~1350 Mbit/s)
+            if (settings.SpeedStreams == 1) settings.SpeedStreams = 4;
+            settings.Schema = 2;
+        }
         return settings;
     }
 
+    /// <summary>Set by test modes (--smoke-test, --ui-test, regression tests): Save() does nothing.</summary>
+    public static bool SavingDisabled { get; set; }
+
     public void Save()
     {
+        if (SavingDisabled) return;
         try
         {
             Directory.CreateDirectory(DataDirectory);

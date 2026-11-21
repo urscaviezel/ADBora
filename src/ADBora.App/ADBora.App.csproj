@@ -9,13 +9,17 @@
     <AssemblyName>ADBora</AssemblyName>
     <RootNamespace>AdbTool</RootNamespace>
     <ApplicationIcon>ADBora.ico</ApplicationIcon>
-    <Version>2.0.1</Version>
+    <Version>2.0.2</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>ADBora</Product>
     <Authors>urscaviezel</Authors>
     <Description>ADBora – Android Device Toolbox: APK backup and install, speed test and ADB console.</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ADBora.SpeedRegression" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.5" />

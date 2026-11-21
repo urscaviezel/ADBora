@@ -565,12 +565,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             _wifiCts = null;
             CleanupConnection();
             await KeepAwakeAsync(false);
-            if (_chart.Analyze() is { } analysis)
-            {
-                _lastAnalysis = analysis;
-                _analysis.Text = analysis.Summary();
-                Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {analysis.Summary()}");
-            }
+            PublishFinalAnalysis();
             _export.IsEnabled = _chart.HasData;
             if (direct)
             {
@@ -595,6 +590,15 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}  {_hmdModel} ({_state.SelectedDevice?.ShownSerial})  ·  {mode}  ·  {duration:0} s  →  {result}");
             _ = _state.RefreshDevicesAsync();
         }
+    }
+
+    internal void PublishFinalAnalysis()
+    {
+        if (_chart.Analyze() is not { } analysis) return;
+        _lastAnalysis = analysis;
+        string summary = analysis.Summary();
+        _analysis.Text = summary;
+        Ui.AppendLine(_history, $"{DateTime.Now:HH:mm:ss}    {summary}");
     }
 
     private async Task<string> RunLimitedModeAsync(int port, double duration, double rate, CancellationToken token)
@@ -1083,6 +1087,10 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         return $"{streams}× · ↓ {down:0.0} Mbit/s · ↑ {up:0.0} Mbit/s";
     }
 
+    internal int AddDirectPhase(bool download) =>
+        _chart.AddPhase(() => download ? Loc.T("↓ Headset → PC", "↓ headset → PC")
+                                        : Loc.T("↑ PC → Headset", "↑ PC → headset"), download ? 1 : 2);
+
     /// <summary>
     /// One direction with 1…n parallel connections: nc listens on the headset (one per port),
     /// the PC connects (no firewall rule needed on the PC). No data for 10 s = abort.
@@ -1125,7 +1133,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
 
         SetStatus(download ? "Messe Headset → PC..." : "Messe PC → Headset...", download ? "Measuring headset → PC..." : "Measuring PC → headset...");
         _currentDownload = download;
-        _phase = _chart.AddPhase(() => download ? Loc.T("↓ Headset → PC", "↓ headset → PC") : Loc.T("↑ PC → Headset", "↑ PC → headset"), download ? 1 : 2);
+        _phase = AddDirectPhase(download);
         _progress.Value = 0;
         Interlocked.Exchange(ref _liveSent, 0);
         Volatile.Write(ref _liveElapsed, 0);
@@ -1259,14 +1267,7 @@ internal sealed class SpeedTestPage : DockPanel, IPage
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ADBora", "Speedtest");
             string tag = Backup.BackupService.DeviceTag(_hmdModel);
             string name = $"Speedtest_{tag}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
-            var header = new List<string>
-            {
-                $"ADBora Speedtest – {DisplayModel(_hmdModel)}",
-                $"{Loc.T("Firmware", "Firmware")}: {(_firmware.Length > 0 ? _firmware : "?")} · {DateTime.Now:yyyy-MM-dd HH:mm}",
-                _testDescription(),
-            };
-            if (_chart.Analyze() is { } a) header.Add(a.Summary());
-            var (png, csv) = _chart.Export(folder, name, header);
+            var (png, csv) = WriteReport(folder, name);
             Ui.AppendLine(_history, Loc.T($"Bericht gespeichert: {png} / {Path.GetFileName(csv)}", $"Report saved: {png} / {Path.GetFileName(csv)}"));
             Platform.OpenFolder(folder);
         }
@@ -1274,6 +1275,18 @@ internal sealed class SpeedTestPage : DockPanel, IPage
         {
             await Dialogs.Message(Owner, ex.Message, "ADBora", MessageKind.Warning);
         }
+    }
+
+    internal (string Png, string Csv) WriteReport(string folder, string name)
+    {
+        var header = new List<string>
+        {
+            $"ADBora Speedtest – {DisplayModel(_hmdModel)}",
+            $"{Loc.T("Firmware", "Firmware")}: {(_firmware.Length > 0 ? _firmware : "?")} · {DateTime.Now:yyyy-MM-dd HH:mm}",
+            _testDescription(),
+        };
+        if (_chart.Analyze() is { } a) header.Add(a.Summary());
+        return _chart.Export(folder, name, header);
     }
 
     /// <summary>Firmware for reports: on Meta Quest the Horizon OS version (ro.vros.build.version 209 → "v2.9",
